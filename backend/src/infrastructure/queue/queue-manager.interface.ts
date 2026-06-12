@@ -1,6 +1,6 @@
 import type { Queue, Worker } from 'bullmq';
 
-export type QueueName = 'bases' | 'tables' | 'revision-history';
+export type QueueName = 'cron' | 'bases' | 'tables' | 'revision-history';
 
 export interface IQueueManager {
   getQueue(name: QueueName): Queue;

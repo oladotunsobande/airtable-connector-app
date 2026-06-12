@@ -17,6 +17,8 @@ import { OAuthService } from './modules/airtable/auth/oauth.service.js';
 import { TokenProvider } from './modules/airtable/auth/token-provider.js';
 import { AirtableApiService } from './modules/airtable/api/airtable-api.service.js';
 import { IngestService } from './modules/airtable/api/ingest.service.js';
+import { PipelineProducer } from './modules/airtable/pipeline/pipeline-producer.js';
+import { CronScheduler } from './modules/airtable/cron/cron-scheduler.js';
 import { HttpServer } from './api/http-server.js';
 
 import type { IHttpClient } from './infrastructure/http/http-client.interface.js';
@@ -50,6 +52,9 @@ export interface Application {
   // Airtable API
   apiService: IAirtableApiService;
   ingestService: IIngestService;
+  // Pipeline
+  pipelineProducer: PipelineProducer;
+  cronScheduler: CronScheduler;
   // Repositories
   baseRepository: IBaseRepository;
   tableRepository: ITableRepository;
@@ -101,8 +106,17 @@ export function buildApplication(): Application {
   );
 
   // ── Phase 5: Pipeline & Cron ─────────────────────────────────────────────────
-  // const pipelineProducer = new PipelineProducer(queueManager, log.child('pipeline'));
-  // const cronScheduler = new CronScheduler(config, queueManager, baseRepository, ingestService, pipelineProducer, log.child('cron'));
+  const pipelineProducer = new PipelineProducer(queueManager);
+  const cronScheduler = new CronScheduler(
+    config,
+    queueManager,
+    baseRepository,
+    tableRepository,
+    pageRepository,
+    ingestService,
+    pipelineProducer,
+    log.child('cron'),
+  );
 
   // ── Phase 6: Browser & Session ───────────────────────────────────────────────
   // const browserManager = new PuppeteerBrowserManager(log.child('browser'));
@@ -143,6 +157,8 @@ export function buildApplication(): Application {
     tokenRepository,
     apiService,
     ingestService,
+    pipelineProducer,
+    cronScheduler,
     baseRepository,
     tableRepository,
     pageRepository,

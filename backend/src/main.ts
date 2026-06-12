@@ -13,7 +13,9 @@ async function bootstrap(): Promise<void> {
   // Start the HTTP server (auth routes live, more routes added in later phases).
   await app.httpServer.start();
 
-  // TODO (Phase 5): start BullMQ workers + cron scheduler
+  // Start BullMQ workers and register the 5-minute repeatable cron job.
+  await app.cronScheduler.start();
+
   // TODO (Phase 6+): register remaining routes on httpServer before starting
 
   // Graceful shutdown

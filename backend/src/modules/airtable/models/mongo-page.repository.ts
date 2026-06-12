@@ -30,6 +30,13 @@ export class MongoPageRepository implements IPageRepository {
     return docs as PageDocument[];
   }
 
+  async findPendingRevisionByTable(baseId: string, tableId: string, limit: number): Promise<PageDocument[]> {
+    const docs = await PageModel.find({ baseId, tableId, revisionStatus: { $in: ['pending', 'error'] } })
+      .limit(limit)
+      .lean();
+    return docs as PageDocument[];
+  }
+
   async findByTableId(tableId: string): Promise<PageDocument[]> {
     const docs = await PageModel.find({ tableId }).lean();
     return docs as PageDocument[];

@@ -13,6 +13,7 @@ export interface PageDocument {
 export interface IPageRepository {
   upsert(page: Pick<PageDocument, 'airtableId' | 'baseId' | 'tableId' | 'fields' | 'createdTime'>): Promise<PageDocument>;
   findPendingRevision(baseId: string, limit: number): Promise<PageDocument[]>;
+  findPendingRevisionByTable(baseId: string, tableId: string, limit: number): Promise<PageDocument[]>;
   findByTableId(tableId: string): Promise<PageDocument[]>;
   updateRevisionStatus(airtableId: string, status: RevisionStatus, scrapedAt?: Date): Promise<void>;
   count(): Promise<number>;
