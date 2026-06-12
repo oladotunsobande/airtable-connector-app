@@ -1,63 +1,99 @@
 import { loadConfig, type AppConfig } from './config/index.js';
 import { logger, type Logger } from './core/logger/index.js';
 
+import { MongoConnection } from './infrastructure/mongo/mongo-connection.js';
+import { FetchHttpClient } from './infrastructure/http/fetch-http-client.js';
+import { TokenBucketRateLimiter } from './infrastructure/rate-limit/token-bucket-rate-limiter.js';
+import { BullMqQueueManager } from './infrastructure/queue/bullmq-queue-manager.js';
+
+import type { IHttpClient } from './infrastructure/http/http-client.interface.js';
+import type { IRateLimiter } from './infrastructure/rate-limit/rate-limiter.interface.js';
+
 /**
- * Composition root — the single place where the object graph is wired by hand.
- *
- * There is no DI container: every service is a plain class that declares its
- * collaborators as constructor parameters, and they are constructed here in
- * dependency order with explicit `new`. This is what enforces the "D" in SOLID
- * (callers depend on interfaces; concrete classes are chosen only here).
- *
- * As later phases add services, instantiate them in this function and expose
- * the ones that `main.ts` needs (HTTP server, cron scheduler, queue manager)
- * on the returned `Application`.
+ * The wired application surface exposed to main.ts.
+ * Only the things `main.ts` needs to start/stop the process appear here.
+ * Everything else lives inside the closure of buildApplication().
  */
 export interface Application {
   config: AppConfig;
   logger: Logger;
+  // Infrastructure — exposed so main.ts can start servers / workers
+  mongo: MongoConnection;
+  queueManager: BullMqQueueManager;
+  // Shared singletons used by later phases (exposed for convenience)
+  httpClient: IHttpClient;
+  rateLimiter: IRateLimiter;
   shutdown: () => Promise<void>;
 }
 
+/**
+ * Composition root — single manual-wiring point.
+ *
+ * Dependency order: leaf services first, consumers after.
+ * Each phase's services are wired here; later phases uncomment their blocks.
+ */
 export function buildApplication(): Application {
-  // ── Config & Logger (no dependencies) ───────────────────────────────────────
+  // ── Phase 0: Config & Logger ─────────────────────────────────────────────────
   const config = loadConfig();
   const log = logger.child('app');
 
-  // ── Infrastructure (Phase 1) ────────────────────────────────────────────────
-  // const httpClient = new FetchHttpClient(log.child('http'));
-  // const rateLimiter = new TokenBucketRateLimiter(config.airtable.rps);
-  // const mongo = new MongoConnection(config.mongo.uri, log.child('mongo'));
-  // const queueManager = new BullMqQueueManager(config.redis, log.child('queue'));
-  // const browserManager = new PuppeteerBrowserManager(log.child('browser'));
+  // ── Phase 1: Core infrastructure ─────────────────────────────────────────────
+  const mongo = new MongoConnection(config.mongo.uri, log.child('mongo'));
 
-  // ── Repositories (Phase 2) ───────────────────────────────────────────────────
+  const httpClient = new FetchHttpClient(log.child('http'));
+
+  const rateLimiter = new TokenBucketRateLimiter(config.airtable.rps);
+
+  const queueManager = new BullMqQueueManager(config.redis, log.child('queue'));
+
+  // ── Phase 2: Repositories ────────────────────────────────────────────────────
+  // (uncomment after Phase 2 is implemented)
   // const baseRepository = new MongoBaseRepository();
   // const tableRepository = new MongoTableRepository();
-  // ...
+  // const pageRepository = new MongoPageRepository();
+  // const revisionHistoryRepository = new MongoRevisionHistoryRepository();
+  // const userRepository = new MongoUserRepository();
+  // const scrapeSessionRepository = new MongoScrapeSessionRepository();
 
-  // ── Auth (Phase 3) ────────────────────────────────────────────────────────────
+  // ── Phase 3: OAuth ───────────────────────────────────────────────────────────
+  // const tokenRepository = new MongoTokenRepository();
   // const oauthService = new OAuthService(config, httpClient);
-  // const tokenProvider = new TokenProvider(oauthService, tokenRepository);
+  // const tokenProvider = new TokenProvider(oauthService, tokenRepository, log.child('token-provider'));
 
-  // ── Airtable API (Phase 4) ──────────────────────────────────────────────────
-  // const apiService = new AirtableApiService(config, httpClient, tokenProvider, rateLimiter);
+  // ── Phase 4: Airtable API ────────────────────────────────────────────────────
+  // const apiService = new AirtableApiService(config, httpClient, tokenProvider, rateLimiter, log.child('airtable-api'));
 
-  // ── Scraping (Phases 6–7) ───────────────────────────────────────────────────
-  // const sessionOrchestrator = new SessionOrchestrator(config, browserManager, scrapeSessionRepository);
+  // ── Phase 5: Pipeline & Cron ─────────────────────────────────────────────────
+  // const pipelineProducer = new PipelineProducer(queueManager, log.child('pipeline'));
+  // const cronScheduler = new CronScheduler(config, queueManager, baseRepository, apiService, pipelineProducer, log.child('cron'));
+
+  // ── Phase 6: Browser & Session ───────────────────────────────────────────────
+  // const browserManager = new PuppeteerBrowserManager(log.child('browser'));
+  // const sessionOrchestrator = new SessionOrchestrator(config, browserManager, scrapeSessionRepository, log.child('session'));
+
+  // ── Phase 7: Revision History ────────────────────────────────────────────────
   // const revisionParser = new RevisionHistoryParser();
-  // const revisionService = new RevisionHistoryService(sessionOrchestrator, revisionParser, ...);
+  // const revisionService = new RevisionHistoryService(sessionOrchestrator, revisionParser, revisionHistoryRepository, userRepository, rateLimiter, log.child('revision'));
 
-  // ── Pipeline & Cron (Phase 5) ───────────────────────────────────────────────
-  // const pipelineProducer = new PipelineProducer(queueManager);
-  // const cronScheduler = new CronScheduler(config, queueManager, baseRepository, apiService, pipelineProducer);
+  // ── Phase 8: HTTP Server ─────────────────────────────────────────────────────
+  // const httpServer = new HttpServer(config, oauthService, tokenProvider, apiService, queueManager, sessionOrchestrator, log.child('http-server'));
 
   const shutdown = async (): Promise<void> => {
-    log.info('Shutting down');
-    // await queueManager.closeAll();
+    log.info('Shutting down gracefully');
+    // await httpServer.stop();
+    // await cronScheduler.shutdown();
+    await queueManager.closeAll();
     // await browserManager.close();
-    // await mongo.disconnect();
+    await mongo.disconnect();
   };
 
-  return { config, logger: log, shutdown };
+  return {
+    config,
+    logger: log,
+    mongo,
+    queueManager,
+    httpClient,
+    rateLimiter,
+    shutdown,
+  };
 }
