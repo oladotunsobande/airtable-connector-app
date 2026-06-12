@@ -15,6 +15,8 @@ import { MongoScrapeSessionRepository } from './modules/airtable/models/mongo-sc
 import { MongoTokenRepository } from './modules/airtable/auth/mongo-token.repository.js';
 import { OAuthService } from './modules/airtable/auth/oauth.service.js';
 import { TokenProvider } from './modules/airtable/auth/token-provider.js';
+import { AirtableApiService } from './modules/airtable/api/airtable-api.service.js';
+import { IngestService } from './modules/airtable/api/ingest.service.js';
 import { HttpServer } from './api/http-server.js';
 
 import type { IHttpClient } from './infrastructure/http/http-client.interface.js';
@@ -28,12 +30,9 @@ import type { IScrapeSessionRepository } from './modules/airtable/models/scrape-
 import type { ITokenRepository } from './modules/airtable/auth/token.repository.interface.js';
 import type { IOAuthService } from './modules/airtable/auth/oauth.service.interface.js';
 import type { ITokenProvider } from './modules/airtable/auth/token-provider.interface.js';
+import type { IAirtableApiService } from './modules/airtable/api/airtable-api.service.interface.js';
+import type { IIngestService } from './modules/airtable/api/ingest.service.js';
 
-/**
- * The wired application surface exposed to main.ts.
- * Only the things `main.ts` needs to start/stop the process appear here.
- * Everything else lives inside the closure of buildApplication().
- */
 export interface Application {
   config: AppConfig;
   logger: Logger;
@@ -41,13 +40,16 @@ export interface Application {
   mongo: MongoConnection;
   queueManager: BullMqQueueManager;
   httpServer: HttpServer;
-  // Shared singletons (exposed for convenience in later phases)
+  // Shared singletons
   httpClient: IHttpClient;
   rateLimiter: IRateLimiter;
   // Auth
   oauthService: IOAuthService;
   tokenProvider: ITokenProvider;
   tokenRepository: ITokenRepository;
+  // Airtable API
+  apiService: IAirtableApiService;
+  ingestService: IIngestService;
   // Repositories
   baseRepository: IBaseRepository;
   tableRepository: ITableRepository;
@@ -58,12 +60,6 @@ export interface Application {
   shutdown: () => Promise<void>;
 }
 
-/**
- * Composition root — single manual-wiring point.
- *
- * Dependency order: leaf services first, consumers after.
- * Each phase's services are wired here; later phases uncomment their blocks.
- */
 export function buildApplication(): Application {
   // ── Phase 0: Config & Logger ─────────────────────────────────────────────────
   const config = loadConfig();
@@ -76,8 +72,6 @@ export function buildApplication(): Application {
   const queueManager = new BullMqQueueManager(config.redis, log.child('queue'));
 
   // ── Phase 2: Repositories ────────────────────────────────────────────────────
-  // All repositories are stateless — they call Mongoose models which use the
-  // shared mongoose.connection established by mongo.connect().
   const baseRepository = new MongoBaseRepository();
   const tableRepository = new MongoTableRepository();
   const pageRepository = new MongoPageRepository();
@@ -91,11 +85,24 @@ export function buildApplication(): Application {
   const tokenProvider = new TokenProvider(oauthService, tokenRepository, log.child('token-provider'));
 
   // ── Phase 4: Airtable API ────────────────────────────────────────────────────
-  // const apiService = new AirtableApiService(config, httpClient, tokenProvider, rateLimiter, log.child('airtable-api'));
+  const apiService = new AirtableApiService(
+    config,
+    httpClient,
+    tokenProvider,
+    rateLimiter,
+    log.child('airtable-api'),
+  );
+  const ingestService = new IngestService(
+    apiService,
+    baseRepository,
+    tableRepository,
+    pageRepository,
+    log.child('ingest'),
+  );
 
   // ── Phase 5: Pipeline & Cron ─────────────────────────────────────────────────
   // const pipelineProducer = new PipelineProducer(queueManager, log.child('pipeline'));
-  // const cronScheduler = new CronScheduler(config, queueManager, baseRepository, apiService, pipelineProducer, log.child('cron'));
+  // const cronScheduler = new CronScheduler(config, queueManager, baseRepository, ingestService, pipelineProducer, log.child('cron'));
 
   // ── Phase 6: Browser & Session ───────────────────────────────────────────────
   // const browserManager = new PuppeteerBrowserManager(log.child('browser'));
@@ -105,7 +112,7 @@ export function buildApplication(): Application {
   // const revisionParser = new RevisionHistoryParser();
   // const revisionService = new RevisionHistoryService(sessionOrchestrator, revisionParser, revisionHistoryRepository, userRepository, rateLimiter, log.child('revision'));
 
-  // ── Phase 3+: HTTP Server (grows as routes are added in each phase) ──────────
+  // ── HTTP Server (grows with each phase) ──────────────────────────────────────
   const httpServer = new HttpServer({
     config,
     oauthService,
@@ -134,6 +141,8 @@ export function buildApplication(): Application {
     oauthService,
     tokenProvider,
     tokenRepository,
+    apiService,
+    ingestService,
     baseRepository,
     tableRepository,
     pageRepository,
