@@ -8,8 +8,8 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ApiService } from '../../core/api/api.service';
 import type { Integration } from '../../core/models/api.models';
 
-const BACKEND_OAUTH_START =
-  'https://dividend-shape-chokehold.ngrok-free.dev/auth/airtable/start';
+const API_BASE = 'http://127.0.0.1:3000';
+const BACKEND_OAUTH_START = `${API_BASE}/auth/airtable/start`;
 
 @Component({
   selector: 'app-integrations',
@@ -52,7 +52,7 @@ export class IntegrationsComponent implements OnInit {
 
   disconnect(_integration: Integration): void {
     console.log('na disconnect');
-    fetch('http://localhost:3000/auth/airtable/disconnect', {
+    fetch(`${API_BASE}/auth/airtable/disconnect`, {
       method: 'DELETE',
     }).finally(() => this.loadIntegrations());
   }

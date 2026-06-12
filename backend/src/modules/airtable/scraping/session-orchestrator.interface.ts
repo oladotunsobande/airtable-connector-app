@@ -33,15 +33,26 @@ export interface ISessionOrchestrator {
   /** Forces a fresh login, discarding the current session. */
   invalidateSession(): Promise<void>;
   /**
-   * Makes an authenticated POST request from within the Puppeteer browser so
-   * that the browser's own cookie store and socket connection are used.
+   * Makes an authenticated request from within the Puppeteer browser so that
+   * the browser's own cookie store and socket connection are used.
    * This is the only reliable way to call Airtable internal APIs that require
    * a live session — manual Node.js fetch with copied cookies fails because
    * Airtable validates the session differently for server-side requests.
+   *
+   * `method` defaults to "POST". Pass "GET" for read endpoints (e.g.
+   * readRowActivitiesAndComments) — these authenticate via cookies only and
+   * must not include a request body or Content-Type header.
    */
   makeBrowserFetch(
     url: string,
     body: string,
     headers: Record<string, string>,
+    method?: 'GET' | 'POST',
   ): Promise<{ status: number; text: string }>;
+  /**
+   * Navigates the active Puppeteer page to the given URL.
+   * Call this before making internal API calls for a specific Airtable base to
+   * ensure the page has the correct auth context loaded for that base.
+   */
+  navigateActivePage(url: string): Promise<void>;
 }

@@ -151,6 +151,13 @@ export class ScrapeRunService {
    */
   private async doLogin(runId: string): Promise<void> {
     try {
+      // Obliterate stale queue jobs BEFORE invalidating the session. Without
+      // this, workers that pick up old jobs call getSession(), which (after the
+      // synchronous loginPromise fix) sets loginPromise before startLogin() can.
+      // startLogin() then finds loginPromise already set and returns
+      // { state: "active" } instead of "awaiting_mfa", so the MFA event is
+      // never broadcast and the 300s timeout fires.
+      await this.obliterateQueues();
       // Always invalidate any existing session so that a fresh Puppeteer login
       // is performed. This guarantees 2FA is detected on every run rather than
       // silently reusing old cookies (which look valid for airtable.com but may

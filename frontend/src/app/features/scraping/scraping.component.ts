@@ -2,7 +2,7 @@ import { Component, inject, effect, ViewChild, ElementRef, OnDestroy } from '@an
 import { MatCardModule } from '@angular/material/card';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
-import { MatDialog, MatDialogModule } from '@angular/material/dialog';
+import { MatDialog, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatChipsModule } from '@angular/material/chips';
 import { ScrapeRunStore } from '../../core/scrape-run/scrape-run.store';
@@ -27,13 +27,28 @@ export class ScrapingComponent implements OnDestroy {
 
   @ViewChild('logPanel') logPanelRef?: ElementRef<HTMLDivElement>;
 
-  private mfaDialogOpen = false;
+  private mfaDialogRef?: MatDialogRef<MfaDialogComponent>;
+  private mfaDialogSessionId: string | null = null;
 
   constructor() {
-    // Open MFA dialog when the store enters awaiting_mfa
+    // Open the MFA dialog when the store enters awaiting_mfa, and re-open it
+    // when the session ID changes while a dialog is already open. Without the
+    // session ID check, a dialog opened for an old session stays up and submits
+    // with a stale ID that the backend no longer has a waiter for.
     effect(() => {
-      if (this.store.status() === 'awaiting_mfa' && !this.mfaDialogOpen) {
-        this.openMfaDialog();
+      const status = this.store.status();
+      const sessionId = this.store.sessionId();
+
+      if (status === 'awaiting_mfa' && sessionId) {
+        if (this.mfaDialogRef && this.mfaDialogSessionId !== sessionId) {
+          // New login produced a different session while the dialog is open.
+          this.mfaDialogRef.close(false);
+          this.mfaDialogRef = undefined;
+          this.mfaDialogSessionId = null;
+        }
+        if (!this.mfaDialogRef) {
+          this.openMfaDialog(sessionId);
+        }
       }
     });
 
@@ -60,21 +75,23 @@ export class ScrapingComponent implements OnDestroy {
     return s === 'logging_in' || s === 'awaiting_mfa' || s === 'running';
   }
 
-  private openMfaDialog(): void {
-    const sessionId = this.store.sessionId();
-    if (!sessionId) return;
-
-    this.mfaDialogOpen = true;
+  private openMfaDialog(sessionId: string): void {
     const ref = this.dialog.open(MfaDialogComponent, {
       width: '400px',
       data: { sessionId },
       disableClose: true,
     });
+    this.mfaDialogRef = ref;
+    this.mfaDialogSessionId = sessionId;
 
     ref.afterClosed().subscribe((submitted: boolean) => {
-      this.mfaDialogOpen = false;
+      // Only clear state if this ref is still the active dialog (a session
+      // change may have already replaced mfaDialogRef with a newer one).
+      if (this.mfaDialogRef === ref) {
+        this.mfaDialogRef = undefined;
+        this.mfaDialogSessionId = null;
+      }
       if (submitted) {
-        // MFA code accepted — re-POST /scraping/run to continue the run
         this.store.start();
       }
     });

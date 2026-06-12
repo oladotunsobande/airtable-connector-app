@@ -41,7 +41,11 @@ export class PuppeteerBrowserManager implements IBrowserManager {
 
   async newPage(): Promise<Page> {
     const browser = await this.getBrowser();
-    const page = await browser.newPage();
+    // Use an isolated browser context so each login has its own cookie store.
+    // All pages share the default context, which means concurrent logins
+    // overwrite each other's session cookies and produce "Login expired" errors.
+    const context = await browser.createBrowserContext();
+    const page = await context.newPage();
     await page.setViewport({ width: 1280, height: 800 });
     await page.setUserAgent(REALISTIC_UA);
     await page.setExtraHTTPHeaders({ 'Accept-Language': 'en-US,en;q=0.9' });

@@ -48,7 +48,7 @@ export class PipelineWorkers {
         producer: this.producer,
         log: this.log.child("bases-processor"),
       }),
-      3,
+      1,
     );
 
     this.queueManager.registerWorker(
@@ -60,7 +60,7 @@ export class PipelineWorkers {
         producer: this.producer,
         log: this.log.child("tables-processor"),
       }),
-      3,
+      1,
     );
 
     this.queueManager.registerWorker(
@@ -70,7 +70,7 @@ export class PipelineWorkers {
         pageRepository: this.pageRepository,
         log: this.log.child("revision-history-processor"),
       }),
-      5,
+      1,
     );
 
     this.log.info("Pipeline workers registered");
