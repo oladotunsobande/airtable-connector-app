@@ -19,6 +19,8 @@ import { AirtableApiService } from './modules/airtable/api/airtable-api.service.
 import { IngestService } from './modules/airtable/api/ingest.service.js';
 import { PipelineProducer } from './modules/airtable/pipeline/pipeline-producer.js';
 import { CronScheduler } from './modules/airtable/cron/cron-scheduler.js';
+import { PuppeteerBrowserManager } from './infrastructure/browser/puppeteer-browser-manager.js';
+import { SessionOrchestrator } from './modules/airtable/scraping/session-orchestrator.js';
 import { HttpServer } from './api/http-server.js';
 
 import type { IHttpClient } from './infrastructure/http/http-client.interface.js';
@@ -34,6 +36,7 @@ import type { IOAuthService } from './modules/airtable/auth/oauth.service.interf
 import type { ITokenProvider } from './modules/airtable/auth/token-provider.interface.js';
 import type { IAirtableApiService } from './modules/airtable/api/airtable-api.service.interface.js';
 import type { IIngestService } from './modules/airtable/api/ingest.service.js';
+import type { ISessionOrchestrator } from './modules/airtable/scraping/session-orchestrator.interface.js';
 
 export interface Application {
   config: AppConfig;
@@ -55,6 +58,9 @@ export interface Application {
   // Pipeline
   pipelineProducer: PipelineProducer;
   cronScheduler: CronScheduler;
+  // Scraping
+  browserManager: PuppeteerBrowserManager;
+  sessionOrchestrator: ISessionOrchestrator;
   // Repositories
   baseRepository: IBaseRepository;
   tableRepository: ITableRepository;
@@ -119,8 +125,13 @@ export function buildApplication(): Application {
   );
 
   // ── Phase 6: Browser & Session ───────────────────────────────────────────────
-  // const browserManager = new PuppeteerBrowserManager(log.child('browser'));
-  // const sessionOrchestrator = new SessionOrchestrator(config, browserManager, scrapeSessionRepository, log.child('session'));
+  const browserManager = new PuppeteerBrowserManager(log.child('browser'));
+  const sessionOrchestrator = new SessionOrchestrator(
+    config,
+    browserManager,
+    scrapeSessionRepository,
+    log.child('session'),
+  );
 
   // ── Phase 7: Revision History ────────────────────────────────────────────────
   // const revisionParser = new RevisionHistoryParser();
@@ -132,15 +143,15 @@ export function buildApplication(): Application {
     oauthService,
     tokenProvider,
     tokenRepository,
+    sessionOrchestrator,
     log: log.child('http-server'),
   });
 
   const shutdown = async (): Promise<void> => {
     log.info('Shutting down gracefully');
     await httpServer.stop();
-    // await cronScheduler.shutdown();
     await queueManager.closeAll();
-    // await browserManager.close();
+    await browserManager.close();
     await mongo.disconnect();
   };
 
@@ -159,6 +170,8 @@ export function buildApplication(): Application {
     ingestService,
     pipelineProducer,
     cronScheduler,
+    browserManager,
+    sessionOrchestrator,
     baseRepository,
     tableRepository,
     pageRepository,
