@@ -5,6 +5,7 @@ import type { IBaseRepository } from '../models/base.repository.interface.js';
 import type { ITableRepository } from '../models/table.repository.interface.js';
 import type { IPageRepository } from '../models/page.repository.interface.js';
 import type { IIngestService } from '../api/ingest.service.js';
+import type { IRevisionHistoryService } from '../scraping/revision-history.service.interface.js';
 import type { PipelineProducer } from '../pipeline/pipeline-producer.js';
 
 import { createCronProcessor } from '../pipeline/workers/cron.processor.js';
@@ -22,6 +23,7 @@ export class CronScheduler {
     private readonly tableRepository: ITableRepository,
     private readonly pageRepository: IPageRepository,
     private readonly ingestService: IIngestService,
+    private readonly revisionHistoryService: IRevisionHistoryService,
     private readonly producer: PipelineProducer,
     private readonly log: Logger,
   ) {}
@@ -72,10 +74,11 @@ export class CronScheduler {
       3,
     );
 
-    // Concurrency 5: revision-history scraping (Phase 7) will be I/O-heavy.
+    // Concurrency 5: revision-history scraping is I/O-heavy (fetch + parse per row).
     this.queueManager.registerWorker(
       'revision-history',
       createRevisionHistoryProcessor({
+        revisionHistoryService: this.revisionHistoryService,
         pageRepository: this.pageRepository,
         log: this.log.child('revision-history-processor'),
       }),

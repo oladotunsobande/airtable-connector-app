@@ -21,6 +21,8 @@ import { PipelineProducer } from './modules/airtable/pipeline/pipeline-producer.
 import { CronScheduler } from './modules/airtable/cron/cron-scheduler.js';
 import { PuppeteerBrowserManager } from './infrastructure/browser/puppeteer-browser-manager.js';
 import { SessionOrchestrator } from './modules/airtable/scraping/session-orchestrator.js';
+import { RevisionHistoryParser } from './modules/airtable/scraping/revision-history.parser.js';
+import { RevisionHistoryService } from './modules/airtable/scraping/revision-history.service.js';
 import { HttpServer } from './api/http-server.js';
 
 import type { IHttpClient } from './infrastructure/http/http-client.interface.js';
@@ -37,6 +39,7 @@ import type { ITokenProvider } from './modules/airtable/auth/token-provider.inte
 import type { IAirtableApiService } from './modules/airtable/api/airtable-api.service.interface.js';
 import type { IIngestService } from './modules/airtable/api/ingest.service.js';
 import type { ISessionOrchestrator } from './modules/airtable/scraping/session-orchestrator.interface.js';
+import type { IRevisionHistoryService } from './modules/airtable/scraping/revision-history.service.interface.js';
 
 export interface Application {
   config: AppConfig;
@@ -61,6 +64,7 @@ export interface Application {
   // Scraping
   browserManager: PuppeteerBrowserManager;
   sessionOrchestrator: ISessionOrchestrator;
+  revisionHistoryService: IRevisionHistoryService;
   // Repositories
   baseRepository: IBaseRepository;
   tableRepository: ITableRepository;
@@ -111,19 +115,6 @@ export function buildApplication(): Application {
     log.child('ingest'),
   );
 
-  // ── Phase 5: Pipeline & Cron ─────────────────────────────────────────────────
-  const pipelineProducer = new PipelineProducer(queueManager);
-  const cronScheduler = new CronScheduler(
-    config,
-    queueManager,
-    baseRepository,
-    tableRepository,
-    pageRepository,
-    ingestService,
-    pipelineProducer,
-    log.child('cron'),
-  );
-
   // ── Phase 6: Browser & Session ───────────────────────────────────────────────
   const browserManager = new PuppeteerBrowserManager(log.child('browser'));
   const sessionOrchestrator = new SessionOrchestrator(
@@ -134,8 +125,29 @@ export function buildApplication(): Application {
   );
 
   // ── Phase 7: Revision History ────────────────────────────────────────────────
-  // const revisionParser = new RevisionHistoryParser();
-  // const revisionService = new RevisionHistoryService(sessionOrchestrator, revisionParser, revisionHistoryRepository, userRepository, rateLimiter, log.child('revision'));
+  const revisionHistoryParser = new RevisionHistoryParser();
+  const revisionHistoryService = new RevisionHistoryService(
+    sessionOrchestrator,
+    revisionHistoryParser,
+    revisionHistoryRepository,
+    userRepository,
+    rateLimiter,
+    log.child('revision'),
+  );
+
+  // ── Phase 5: Pipeline & Cron (depends on Phase 7 revisionHistoryService) ─────
+  const pipelineProducer = new PipelineProducer(queueManager);
+  const cronScheduler = new CronScheduler(
+    config,
+    queueManager,
+    baseRepository,
+    tableRepository,
+    pageRepository,
+    ingestService,
+    revisionHistoryService,
+    pipelineProducer,
+    log.child('cron'),
+  );
 
   // ── HTTP Server (grows with each phase) ──────────────────────────────────────
   const httpServer = new HttpServer({
@@ -172,6 +184,7 @@ export function buildApplication(): Application {
     cronScheduler,
     browserManager,
     sessionOrchestrator,
+    revisionHistoryService,
     baseRepository,
     tableRepository,
     pageRepository,

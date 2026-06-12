@@ -1,9 +1,8 @@
-import type { RevisionHistoryDocument } from '../models/revision-history.repository.interface.js';
-
 export interface IRevisionHistoryService {
   /**
-   * Fetches all revision history entries (paginated) for a given row/ticket.
-   * Automatically re-authenticates if the session expires mid-run.
+   * Fetches all revision history for a given row/ticket, parses it, and
+   * persists it to the DB. Automatically re-authenticates via the session
+   * orchestrator if cookies expire mid-run.
    */
-  fetchForTicket(rowId: string): Promise<RevisionHistoryDocument[]>;
+  scrapeForPage(baseId: string, tableId: string, rowId: string): Promise<void>;
 }
