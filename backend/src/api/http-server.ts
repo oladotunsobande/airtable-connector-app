@@ -137,12 +137,6 @@ export class HttpServer {
             error,
             error_description,
           } = req.query as Record<string, string | undefined>;
-          console.log({
-            code,
-            receivedState,
-            error,
-            errorDesc: error_description,
-          });
 
           if (error) {
             this.deps.log.warn("OAuth callback error from Airtable", {

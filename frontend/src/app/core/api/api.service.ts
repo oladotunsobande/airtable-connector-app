@@ -6,8 +6,6 @@ import type {
   EntityMeta,
   EntityPage,
   QueryOptions,
-  RunSnapshot,
-  StartRunResponse,
 } from '../models/api.models';
 
 const API_BASE = 'http://127.0.0.1:3000';
@@ -41,18 +39,7 @@ export class ApiService {
     });
   }
 
-  startRun(): Observable<StartRunResponse> {
-    return this.http.post<StartRunResponse>(`${API_BASE}/scraping/run`, {});
-  }
-
-  getRunStatus(): Observable<RunSnapshot> {
-    return this.http.get<RunSnapshot>(`${API_BASE}/scraping/run`);
-  }
-
   submitMfa(sessionId: string, code: string): Observable<void> {
-    return this.http.post<void>(`${API_BASE}/scraping/mfa`, {
-      sessionId,
-      code,
-    });
+    return this.http.post<void>(`${API_BASE}/scraping/mfa`, { sessionId, code });
   }
 }

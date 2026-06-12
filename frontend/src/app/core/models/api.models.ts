@@ -37,14 +37,6 @@ export type RunStatus =
   | 'completed'
   | 'failed';
 
-export interface RunSnapshot {
-  runId: string | null;
-  status: RunStatus;
-  error: string | null;
-  startedAt: string | null;
-  finishedAt: string | null;
-}
-
 export interface StartRunResponse {
   runId: string;
   status: RunStatus;
