@@ -1,0 +1,35 @@
+<h2 mat-dialog-title>MFA Authentication Required</h2>
+
+<mat-dialog-content>
+  <p>Enter the code from your authenticator app or email to complete the Airtable login.</p>
+  <mat-form-field appearance="outline" class="code-field">
+    <mat-label>Authentication Code</mat-label>
+    <input
+      matInput
+      [(ngModel)]="code"
+      placeholder="123456"
+      maxlength="8"
+      autocomplete="one-time-code"
+      (keyup.enter)="submit()"
+    />
+  </mat-form-field>
+  @if (error()) {
+    <p class="error-msg">{{ error() }}</p>
+  }
+</mat-dialog-content>
+
+<mat-dialog-actions align="end">
+  <button mat-button (click)="cancel()">Cancel</button>
+  <button
+    mat-raised-button
+    color="primary"
+    [disabled]="!code.trim() || submitting()"
+    (click)="submit()"
+  >
+    @if (submitting()) {
+      <mat-spinner diameter="18" class="inline-spinner" />
+    } @else {
+      Submit
+    }
+  </button>
+</mat-dialog-actions>

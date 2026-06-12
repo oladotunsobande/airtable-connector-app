@@ -1,0 +1,96 @@
+<div class="page-header">
+  <h2>Scraping Control</h2>
+  <p class="subtitle">Manage the Puppeteer session that harvests revision history.</p>
+</div>
+
+<mat-card class="scraping-card">
+  <mat-card-header>
+    <div mat-card-avatar class="avatar-icon">
+      <mat-icon>manage_search</mat-icon>
+    </div>
+    <mat-card-title>Airtable Scraper</mat-card-title>
+    <mat-card-subtitle>Harvests Assignee &amp; Status revision history for all pages</mat-card-subtitle>
+  </mat-card-header>
+
+  <mat-card-content>
+    <div class="status-row">
+      <span class="label">Session state:</span>
+      @switch (sessionState()) {
+        @case ('active') {
+          <mat-chip color="primary" highlighted>
+            <mat-icon>check_circle</mat-icon> Active
+          </mat-chip>
+        }
+        @case ('awaiting_mfa') {
+          <mat-chip color="accent" highlighted>
+            <mat-icon>pin</mat-icon> Awaiting MFA
+          </mat-chip>
+        }
+        @case ('expired') {
+          <mat-chip color="warn" highlighted>
+            <mat-icon>schedule</mat-icon> Expired
+          </mat-chip>
+        }
+        @case ('invalid') {
+          <mat-chip color="warn" highlighted>
+            <mat-icon>error</mat-icon> Invalid
+          </mat-chip>
+        }
+        @default {
+          <mat-chip>No session</mat-chip>
+        }
+      }
+    </div>
+
+    @if (sessionState() === 'awaiting_mfa') {
+      <div class="notice info">
+        <mat-icon>info</mat-icon>
+        <span>
+          Multi-factor authentication is required.
+          Click <strong>Enter MFA Code</strong> to continue.
+        </span>
+      </div>
+    }
+
+    @if (sessionState() === 'active') {
+      <div class="notice success">
+        <mat-icon>check_circle</mat-icon>
+        <span>Session is active. The BullMQ pipeline will use these cookies to scrape revision history.</span>
+      </div>
+    }
+
+    @if (errorMsg()) {
+      <div class="notice error">
+        <mat-icon>error</mat-icon>
+        <span>{{ errorMsg() }}</span>
+      </div>
+    }
+  </mat-card-content>
+
+  <mat-card-actions class="actions">
+    <button
+      mat-raised-button
+      color="primary"
+      [disabled]="isStarting()"
+      (click)="startScraping()"
+    >
+      @if (isStarting()) {
+        <mat-spinner diameter="18" class="inline-spinner" />
+      } @else {
+        <mat-icon>play_arrow</mat-icon>
+      }
+      Start Scraping
+    </button>
+
+    @if (sessionState() === 'awaiting_mfa' && currentSessionId()) {
+      <button mat-stroked-button color="accent" (click)="openMfaDialog()">
+        <mat-icon>pin</mat-icon>
+        Enter MFA Code
+      </button>
+    }
+
+    <button mat-icon-button (click)="refreshSession()" title="Refresh session status">
+      <mat-icon>refresh</mat-icon>
+    </button>
+  </mat-card-actions>
+</mat-card>

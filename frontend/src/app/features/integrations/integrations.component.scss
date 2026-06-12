@@ -1,0 +1,78 @@
+// ── Page header ───────────────────────────────────────────────────────────────
+
+.page-header {
+  margin-bottom: 24px;
+
+  h2 {
+    margin: 0 0 4px;
+    font-size: 1.5rem;
+    font-weight: 500;
+  }
+}
+
+.subtitle {
+  margin: 0;
+  color: rgba(0, 0, 0, 0.6);
+}
+
+// ── Loading ───────────────────────────────────────────────────────────────────
+
+.spinner-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 40px;
+}
+
+// ── Integration card ──────────────────────────────────────────────────────────
+
+.integration-card {
+  max-width: 520px;
+  margin-bottom: 16px;
+}
+
+.avatar-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #e3f2fd;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+
+  mat-icon {
+    color: #1565c0;
+  }
+}
+
+.description {
+  margin: 8px 0 0;
+  color: rgba(0, 0, 0, 0.7);
+  font-size: 0.9rem;
+}
+
+mat-card-actions {
+  gap: 8px;
+}
+
+// ── Status banner ─────────────────────────────────────────────────────────────
+
+.status-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-radius: 6px;
+  margin-top: 16px;
+  max-width: 520px;
+  font-size: 0.9rem;
+
+  &.success {
+    background: #e8f5e9;
+    color: #2e7d32;
+  }
+
+  &.error {
+    background: #ffebee;
+    color: #c62828;
+  }
+}

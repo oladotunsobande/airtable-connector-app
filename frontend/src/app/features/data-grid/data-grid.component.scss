@@ -1,0 +1,72 @@
+:host {
+  display: block;
+}
+
+// ── Toolbar ───────────────────────────────────────────────────────────────────
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.entity-select {
+  min-width: 220px;
+}
+
+.search-field {
+  min-width: 280px;
+  flex: 1;
+  max-width: 480px;
+}
+
+.count-badge {
+  margin-left: 8px;
+  font-size: 0.75rem;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.total-label {
+  font-size: 0.875rem;
+  color: rgba(0, 0, 0, 0.55);
+  white-space: nowrap;
+}
+
+// ── Progress bar ──────────────────────────────────────────────────────────────
+
+.loading-bar {
+  margin-bottom: 4px;
+  border-radius: 2px;
+}
+
+// ── Grid ──────────────────────────────────────────────────────────────────────
+
+.grid-wrap {
+  height: calc(100vh - 260px);
+  min-height: 400px;
+
+  ag-grid-angular {
+    width: 100%;
+    height: 100%;
+  }
+}
+
+// ── Chart card ────────────────────────────────────────────────────────────────
+
+.chart-card {
+  margin-top: 24px;
+
+  mat-card-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+}
+
+.chart {
+  display: block;
+  width: 100%;
+  height: 280px;
+}

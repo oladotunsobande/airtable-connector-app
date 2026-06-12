@@ -1,0 +1,63 @@
+<div class="page-header">
+  <h2>Active Integrations</h2>
+  <p class="subtitle">Manage your Airtable OAuth connection.</p>
+</div>
+
+@if (loading()) {
+  <div class="spinner-wrap">
+    <mat-spinner diameter="40" />
+  </div>
+} @else {
+  @for (integration of integrations(); track integration.id) {
+    <mat-card class="integration-card">
+      <mat-card-header>
+        <div mat-card-avatar class="avatar-icon">
+          <mat-icon>hub</mat-icon>
+        </div>
+        <mat-card-title>{{ integration.name }}</mat-card-title>
+        <mat-card-subtitle>
+          @if (integration.connected) {
+            <mat-chip color="primary" highlighted>Connected</mat-chip>
+          } @else {
+            <mat-chip>Not connected</mat-chip>
+          }
+        </mat-card-subtitle>
+      </mat-card-header>
+
+      <mat-card-content>
+        <p class="description">
+          @if (integration.connected) {
+            Access token is stored and will auto-refresh when it expires.
+          } @else {
+            Click below to start the OAuth 2.0 authorisation flow.
+          }
+        </p>
+      </mat-card-content>
+
+      <mat-card-actions>
+        @if (integration.connected) {
+          <button mat-stroked-button color="warn" (click)="disconnect(integration)">
+            <mat-icon>link_off</mat-icon>
+            Disconnect
+          </button>
+        } @else {
+          <button mat-raised-button color="primary" (click)="connect()">
+            <mat-icon>link</mat-icon>
+            Connect with Airtable
+          </button>
+        }
+      </mat-card-actions>
+    </mat-card>
+  }
+}
+
+@if (statusMessage()) {
+  <div
+    class="status-banner"
+    [class.success]="statusType() === 'success'"
+    [class.error]="statusType() === 'error'"
+  >
+    <mat-icon>{{ statusType() === 'success' ? 'check_circle' : 'error' }}</mat-icon>
+    <span>{{ statusMessage() }}</span>
+  </div>
+}

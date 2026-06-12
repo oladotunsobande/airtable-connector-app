@@ -1,0 +1,98 @@
+// ── Page header ───────────────────────────────────────────────────────────────
+
+.page-header {
+  margin-bottom: 24px;
+
+  h2 {
+    margin: 0 0 4px;
+    font-size: 1.5rem;
+    font-weight: 500;
+  }
+}
+
+.subtitle {
+  margin: 0;
+  color: rgba(0, 0, 0, 0.6);
+}
+
+// ── Card ──────────────────────────────────────────────────────────────────────
+
+.scraping-card {
+  max-width: 580px;
+}
+
+.avatar-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f3e5f5;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+
+  mat-icon {
+    color: #7b1fa2;
+  }
+}
+
+// ── Session status ────────────────────────────────────────────────────────────
+
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.label {
+  font-weight: 500;
+  color: rgba(0, 0, 0, 0.6);
+}
+
+// ── Notice banners ────────────────────────────────────────────────────────────
+
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  margin-bottom: 12px;
+  font-size: 0.9rem;
+
+  mat-icon {
+    flex-shrink: 0;
+    font-size: 20px;
+    width: 20px;
+    height: 20px;
+    margin-top: 1px;
+  }
+
+  &.info {
+    background: #e3f2fd;
+    color: #1565c0;
+  }
+
+  &.success {
+    background: #e8f5e9;
+    color: #2e7d32;
+  }
+
+  &.error {
+    background: #ffebee;
+    color: #c62828;
+  }
+}
+
+// ── Actions ───────────────────────────────────────────────────────────────────
+
+.actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.inline-spinner {
+  display: inline-block;
+  vertical-align: middle;
+}
