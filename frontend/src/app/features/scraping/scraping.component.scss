@@ -1,98 +1,75 @@
-// ── Page header ───────────────────────────────────────────────────────────────
-
-.page-header {
-  margin-bottom: 24px;
-
-  h2 {
-    margin: 0 0 4px;
-    font-size: 1.5rem;
-    font-weight: 500;
-  }
-}
-
-.subtitle {
-  margin: 0;
-  color: rgba(0, 0, 0, 0.6);
-}
-
-// ── Card ──────────────────────────────────────────────────────────────────────
-
 .scraping-card {
-  max-width: 580px;
+  height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
 }
 
 .avatar-icon {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f3e5f5;
+  background: #e3f2fd;
   border-radius: 50%;
-  width: 40px;
-  height: 40px;
-
-  mat-icon {
-    color: #7b1fa2;
-  }
+  color: #1976d2;
 }
 
-// ── Session status ────────────────────────────────────────────────────────────
+mat-card-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
 
-.status-row {
+.control-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 16px;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
-.label {
-  font-weight: 500;
-  color: rgba(0, 0, 0, 0.6);
-}
-
-// ── Notice banners ────────────────────────────────────────────────────────────
-
-.notice {
+.status-chip {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 10px 14px;
-  border-radius: 6px;
-  margin-bottom: 12px;
-  font-size: 0.9rem;
+  align-items: center;
 
   mat-icon {
-    flex-shrink: 0;
-    font-size: 20px;
-    width: 20px;
-    height: 20px;
-    margin-top: 1px;
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
+    margin-right: 4px;
   }
-
-  &.info {
-    background: #e3f2fd;
-    color: #1565c0;
-  }
-
-  &.success {
-    background: #e8f5e9;
-    color: #2e7d32;
-  }
-
-  &.error {
-    background: #ffebee;
-    color: #c62828;
-  }
-}
-
-// ── Actions ───────────────────────────────────────────────────────────────────
-
-.actions {
-  display: flex;
-  gap: 8px;
-  align-items: center;
 }
 
 .inline-spinner {
   display: inline-block;
   vertical-align: middle;
+  margin-right: 4px;
+}
+
+.log-panel {
+  flex: 1;
+  min-height: 180px;
+  max-height: 300px;
+  overflow-y: auto;
+  background: #1e1e1e;
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-family: 'Roboto Mono', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #d4d4d4;
+}
+
+.log-empty {
+  color: #6b7280;
+  font-style: italic;
+}
+
+.log-line {
+  white-space: pre-wrap;
+  word-break: break-all;
+
+  &:not(:last-child) {
+    margin-bottom: 2px;
+  }
 }

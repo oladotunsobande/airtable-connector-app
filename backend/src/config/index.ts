@@ -29,6 +29,7 @@ function optionalInt(key: string, fallback: number): number {
 export interface AppConfig {
   nodeEnv: string;
   port: number;
+  corsOrigins: string[];
   mongo: {
     uri: string;
   };
@@ -59,6 +60,7 @@ export function loadConfig(): AppConfig {
   return {
     nodeEnv: optional('NODE_ENV', 'development'),
     port: optionalInt('PORT', 3000),
+    corsOrigins: optional('CORS_ORIGINS', 'http://localhost:4200').split(',').map(s => s.trim()).filter(Boolean),
     mongo: {
       uri: optional('MONGO_URI', 'mongodb://localhost:27017/airtable_connector'),
     },

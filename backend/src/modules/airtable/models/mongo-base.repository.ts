@@ -81,4 +81,11 @@ export class MongoBaseRepository implements IBaseRepository {
   async count(): Promise<number> {
     return BaseModel.countDocuments();
   }
+
+  async resetAllForReprocessing(): Promise<void> {
+    await BaseModel.updateMany(
+      {},
+      { $set: { processingStatus: 'idle', processingErrors: [], lastProcessedAt: null, lastSuccessfulAt: null } },
+    );
+  }
 }

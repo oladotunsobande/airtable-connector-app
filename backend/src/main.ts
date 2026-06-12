@@ -7,25 +7,19 @@ async function bootstrap(): Promise<void> {
 
   log.info('Starting Airtable Connector backend', { env: config.nodeEnv, port: config.port });
 
-  // Connect to MongoDB (schemas are registered on import, connection is shared).
   await app.mongo.connect();
-
-  // Start the HTTP server (auth routes live, more routes added in later phases).
   await app.httpServer.start();
 
-  // Start BullMQ workers and register the 5-minute repeatable cron job.
-  await app.cronScheduler.start();
+  // Register BullMQ workers (no repeating scheduler — runs are triggered on-demand).
+  app.pipelineWorkers.registerWorkers();
 
-  // TODO (Phase 6+): register remaining routes on httpServer before starting
-
-  // Graceful shutdown
   const shutdown = async (signal: string) => {
     log.info('Received shutdown signal', { signal });
     await app.shutdown();
     process.exit(0);
   };
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
-  process.on('SIGINT', () => void shutdown('SIGINT'));
+  process.on('SIGINT',  () => void shutdown('SIGINT'));
 
   log.info('Backend ready', { port: config.port });
 }

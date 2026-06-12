@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Logger } from '../../../core/logger/index.js';
 import type { IRateLimiter } from '../../../infrastructure/rate-limit/rate-limiter.interface.js';
 import { ScrapingError, SessionExpiredError } from '../../../core/errors/index.js';
-import type { ISessionOrchestrator, HarvestedSession } from './session-orchestrator.interface.js';
+import type { ISessionOrchestrator } from './session-orchestrator.interface.js';
 import type { IRevisionHistoryParser, RawActivityItem } from './revision-history-parser.interface.js';
 import type { IRevisionHistoryService } from './revision-history.service.interface.js';
 import type { IRevisionHistoryRepository } from '../models/revision-history.repository.interface.js';
@@ -11,17 +11,11 @@ import type { RevisionHistoryDocument } from '../models/revision-history.reposit
 
 // ── Airtable internal API ─────────────────────────────────────────────────────
 
-/**
- * Endpoint URL template for the row-activity feed.
- * `{baseId}` = the `appXXX` base ID.
- * `{tableId}` = the `tblXXX` table ID.
- */
-const ENDPOINT = (baseId: string, tableId: string) =>
-  `https://airtable.com/v0.3/${baseId}/${tableId}/readRowActivitiesAndComments`;
+const ENDPOINT = (rowId: string) =>
+  `https://airtable.com/v0.3/row/${rowId}/readRowActivitiesAndComments`;
 
 const SCRAPE_RATE_LIMIT_KEY = 'airtable.com';
 const PAGE_SIZE = 50;
-const MAX_RE_AUTH_RETRIES = 1;
 
 // ── Response types ────────────────────────────────────────────────────────────
 
@@ -40,8 +34,19 @@ interface RawUser {
   profilePicUrl?: string | null;
 }
 
-interface ActivityResponse {
+interface ActivityPayload {
   rowActivityInfoById: Record<string, RawActivity>;
+  rowActivityOrCommentUserObjById?: Record<string, RawUser>;
+  offsetV2?: string | null;
+  isRevisionHistoryDisabled?: boolean;
+}
+
+interface ActivityResponse {
+  msg?: string;
+  // API wraps payload under `data`
+  data?: ActivityPayload;
+  // Legacy flat shape (kept for compatibility)
+  rowActivityInfoById?: Record<string, RawActivity>;
   rowActivityOrCommentUserObjById?: Record<string, RawUser>;
   offsetV2?: string;
   error?: string;
@@ -59,19 +64,15 @@ export class RevisionHistoryService implements IRevisionHistoryService {
     private readonly log: Logger,
   ) {}
 
-  async scrapeForPage(baseId: string, tableId: string, rowId: string): Promise<void> {
-    const session = await this.sessionOrchestrator.getSession();
-    await this.fetchAllPages(baseId, tableId, rowId, session, 0);
+  async scrapeForPage(baseId: string, _tableId: string, rowId: string): Promise<void> {
+    await this.fetchAllPages(baseId, rowId);
   }
 
   // ── Pagination loop ─────────────────────────────────────────────────────────
 
   private async fetchAllPages(
     baseId: string,
-    tableId: string,
     rowId: string,
-    session: HarvestedSession,
-    retryCount: number,
   ): Promise<void> {
     const revisions: RevisionHistoryDocument[] = [];
     const usersMap = new Map<string, UserDocument>();
@@ -80,66 +81,95 @@ export class RevisionHistoryService implements IRevisionHistoryService {
     do {
       await this.rateLimiter.acquire(SCRAPE_RATE_LIMIT_KEY);
 
+      // Omit secretSocketId — the browser's live socket connection handles
+      // real-time updates server-side; we only need the synchronous response.
       const params = {
         rowId,
         limit: PAGE_SIZE,
         ...(offsetV2 !== null ? { offsetV2 } : {}),
         shouldReturnDeserializedActivityItems: true,
         shouldIncludeRowActivityOrCommentUserObjById: true,
-        secretSocketId: session.tokens.secretSocketId,
       };
 
-      const cookieHeader = session.cookies.map((c) => `${c.name}=${c.value}`).join('; ');
-      const body = new URLSearchParams({
+      const formBody = new URLSearchParams({
         stringifiedObjectParams: JSON.stringify(params),
         requestId: randomUUID(),
       });
 
-      let response: Response;
+      // Use the live Puppeteer browser so the browser's own cookie store and
+      // socket state are used — avoids manually reconstructing auth in Node.js.
+      let result: { status: number; text: string };
       try {
-        response = await fetch(ENDPOINT(baseId, tableId), {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            Cookie: cookieHeader,
+        result = await this.sessionOrchestrator.makeBrowserFetch(
+          ENDPOINT(rowId),
+          formBody.toString(),
+          {
             'x-requested-with': 'XMLHttpRequest',
             'x-airtable-application-id': baseId,
+            'x-time-zone': 'UTC',
           },
-          body: body.toString(),
-          signal: AbortSignal.timeout(30_000),
-        });
+        );
       } catch (err) {
         throw new ScrapingError(
           `Network error fetching revision history for ${rowId}: ${err instanceof Error ? err.message : String(err)}`,
         );
       }
 
-      // Re-auth on 401/403
-      if (response.status === 401 || response.status === 403) {
-        if (retryCount < MAX_RE_AUTH_RETRIES) {
-          this.log.warn('Session expired mid-scrape — re-authenticating', { rowId });
-          await this.sessionOrchestrator.invalidateSession();
-          const newSession = await this.sessionOrchestrator.getSession();
-          return this.fetchAllPages(baseId, tableId, rowId, newSession, retryCount + 1);
+      if (result.status === 401 || result.status === 403) {
+        this.log.warn('Auth failure on revision history API — invalidating session and retrying', {
+          rowId,
+          status: result.status,
+        });
+        await this.sessionOrchestrator.invalidateSession();
+        // Retry once with fresh session; throw SessionExpiredError if it fails again.
+        try {
+          result = await this.sessionOrchestrator.makeBrowserFetch(
+            ENDPOINT(rowId),
+            formBody.toString(),
+            {
+              'x-requested-with': 'XMLHttpRequest',
+              'x-airtable-application-id': baseId,
+              'x-time-zone': 'UTC',
+            },
+          );
+        } catch (retryErr) {
+          throw new ScrapingError(
+            `Network error on retry for ${rowId}: ${retryErr instanceof Error ? retryErr.message : String(retryErr)}`,
+          );
         }
-        throw new SessionExpiredError();
+        if (result.status === 401 || result.status === 403) {
+          this.log.warn('Auth failure persisted after session refresh', { rowId, status: result.status });
+          throw new SessionExpiredError();
+        }
       }
 
-      if (!response.ok) {
+      if (result.status < 200 || result.status >= 300) {
         throw new ScrapingError(
-          `readRowActivitiesAndComments returned ${response.status} for row ${rowId}`,
+          `readRowActivitiesAndComments returned ${result.status} for row ${rowId}: ${result.text.slice(0, 300)}`,
         );
       }
 
-      const data = (await response.json()) as ActivityResponse;
+      const envelope = JSON.parse(result.text) as ActivityResponse;
 
-      if (data.error) {
-        throw new ScrapingError(`Airtable API error for row ${rowId}: ${data.error}`);
+      if (envelope.error) {
+        throw new ScrapingError(`Airtable API error for row ${rowId}: ${envelope.error}`);
+      }
+
+      // Unwrap nested `data` payload (API wraps response as { msg, data: { ... } })
+      const payload: ActivityPayload = envelope.data ?? ({
+        rowActivityInfoById: envelope.rowActivityInfoById ?? {},
+        rowActivityOrCommentUserObjById: envelope.rowActivityOrCommentUserObjById,
+        offsetV2: envelope.offsetV2,
+      } as ActivityPayload);
+
+      if (payload.isRevisionHistoryDisabled) {
+        this.log.warn('Revision history disabled for row', { rowId });
+        break;
       }
 
       // ── Extract users ───────────────────────────────────────────────────────
       for (const [userId, userInfo] of Object.entries(
-        data.rowActivityOrCommentUserObjById ?? {},
+        payload.rowActivityOrCommentUserObjById ?? {},
       )) {
         usersMap.set(userId, {
           airtableId: userId,
@@ -150,7 +180,7 @@ export class RevisionHistoryService implements IRevisionHistoryService {
       }
 
       // ── Parse activity items ────────────────────────────────────────────────
-      for (const [activityId, item] of Object.entries(data.rowActivityInfoById)) {
+      for (const [activityId, item] of Object.entries(payload.rowActivityInfoById)) {
         if (!item.diffRowHtml) continue;
 
         const rawItem: RawActivityItem = {
@@ -166,7 +196,7 @@ export class RevisionHistoryService implements IRevisionHistoryService {
         if (parsed) revisions.push(parsed);
       }
 
-      offsetV2 = data.offsetV2 ?? null;
+      offsetV2 = payload.offsetV2 ?? null;
     } while (offsetV2 !== null);
 
     // ── Persist ─────────────────────────────────────────────────────────────

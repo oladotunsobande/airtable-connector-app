@@ -23,4 +23,5 @@ export interface IBaseRepository {
   updateStatus(airtableId: string, status: ProcessingStatus, error?: ProcessingError): Promise<void>;
   markSuccessful(airtableId: string): Promise<void>;
   count(): Promise<number>;
+  resetAllForReprocessing(): Promise<void>;
 }

@@ -1,0 +1,17 @@
+<div class="dashboard">
+  <div class="top-row">
+    <app-integrations />
+    <app-scraping />
+  </div>
+
+  <div class="bottom-row">
+    @if (store.status() === 'failed') {
+      <div class="error-panel">
+        <mat-icon>error_outline</mat-icon>
+        <p>{{ store.error() ?? 'The scraping run failed.' }}</p>
+      </div>
+    } @else {
+      <app-data-grid />
+    }
+  </div>
+</div>

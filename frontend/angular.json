@@ -65,6 +65,9 @@
         },
         "serve": {
           "builder": "@angular-devkit/build-angular:dev-server",
+          "options": {
+            "allowedHosts": ["dividend-shape-chokehold.ngrok-free.dev"]
+          },
           "configurations": {
             "production": {
               "buildTarget": "frontend:build:production"

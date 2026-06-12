@@ -17,4 +17,5 @@ export interface IPageRepository {
   findByTableId(tableId: string): Promise<PageDocument[]>;
   updateRevisionStatus(airtableId: string, status: RevisionStatus, scrapedAt?: Date): Promise<void>;
   count(): Promise<number>;
+  resetAllRevisionStatus(): Promise<void>;
 }

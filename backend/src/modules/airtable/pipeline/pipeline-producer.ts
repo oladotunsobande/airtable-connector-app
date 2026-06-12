@@ -5,20 +5,14 @@ export class PipelineProducer {
   constructor(private readonly queueManager: BullMqQueueManager) {}
 
   async enqueueBase(payload: BasesJobPayload): Promise<void> {
-    await this.queueManager.getQueue('bases').add('process-base', payload, {
-      jobId: `base:${payload.baseId}`,
-    });
+    await this.queueManager.getQueue('bases').add('process-base', payload);
   }
 
   async enqueueTables(payload: TablesJobPayload): Promise<void> {
-    await this.queueManager.getQueue('tables').add('process-table', payload, {
-      jobId: `table:${payload.tableId}`,
-    });
+    await this.queueManager.getQueue('tables').add('process-table', payload);
   }
 
   async enqueueRevisionHistory(payload: RevisionHistoryJobPayload): Promise<void> {
-    await this.queueManager.getQueue('revision-history').add('scrape-revision', payload, {
-      jobId: `revision:${payload.pageId}`,
-    });
+    await this.queueManager.getQueue('revision-history').add('scrape-revision', payload);
   }
 }

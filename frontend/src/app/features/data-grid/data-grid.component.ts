@@ -2,6 +2,7 @@ import {
   Component,
   inject,
   signal,
+  effect,
   ViewChild,
   OnInit,
   OnDestroy,
@@ -29,6 +30,7 @@ import type {
 } from 'ag-grid-community';
 import type { AgChartOptions } from 'ag-charts-community';
 import { ApiService } from '../../core/api/api.service';
+import { ScrapeRunStore } from '../../core/scrape-run/scrape-run.store';
 import type { EntityMeta } from '../../core/models/api.models';
 
 const PAGE_SIZE = 50;
@@ -54,16 +56,17 @@ const PAGE_SIZE = 50;
 })
 export class DataGridComponent implements OnInit, OnDestroy {
   private readonly api = inject(ApiService);
+  private readonly scrapeRunStore = inject(ScrapeRunStore);
 
   @ViewChild('searchInput') searchInputRef?: ElementRef<HTMLInputElement>;
 
   // ── State ──────────────────────────────────────────────────────────────────
 
-  entities    = signal<EntityMeta[]>([]);
-  colDefs     = signal<ColDef[]>([]);
-  loading     = signal(false);
-  totalRows   = signal(0);
-  searchText  = signal('');
+  entities = signal<EntityMeta[]>([]);
+  colDefs = signal<ColDef[]>([]);
+  loading = signal(false);
+  totalRows = signal(0);
+  searchText = signal('');
   chartOptions = signal<AgChartOptions | null>(null);
 
   selectedEntity = 'bases';
@@ -83,16 +86,29 @@ export class DataGridComponent implements OnInit, OnDestroy {
   private sortDir?: 'asc' | 'desc';
   private searchDebounce?: ReturnType<typeof setTimeout>;
 
+  constructor() {
+    // Refresh grid automatically when a scraping run completes
+    effect(() => {
+      if (this.scrapeRunStore.completedAt() !== null) {
+        this.refreshDatasource();
+      }
+    });
+  }
+
   // ── Lifecycle ──────────────────────────────────────────────────────────────
 
   ngOnInit(): void {
-    this.api.getEntities().subscribe({
-      next: (list) => this.entities.set(list),
-    });
+    this.fetchEntities();
   }
 
   ngOnDestroy(): void {
     clearTimeout(this.searchDebounce);
+  }
+
+  fetchEntities() {
+    this.api.getEntities().subscribe({
+      next: (list) => this.entities.set(list),
+    });
   }
 
   // ── Grid events ────────────────────────────────────────────────────────────
@@ -105,7 +121,7 @@ export class DataGridComponent implements OnInit, OnDestroy {
   onSortChanged(event: SortChangedEvent): void {
     const sortState = event.api.getColumnState().find((c) => c.sort != null);
     this.sortField = sortState?.colId ?? undefined;
-    this.sortDir   = (sortState?.sort as 'asc' | 'desc' | null) ?? undefined;
+    this.sortDir = (sortState?.sort as 'asc' | 'desc' | null) ?? undefined;
     this.refreshDatasource();
   }
 
@@ -134,6 +150,7 @@ export class DataGridComponent implements OnInit, OnDestroy {
   }
 
   refreshGrid(): void {
+    this.fetchEntities();
     this.refreshDatasource();
   }
 
@@ -146,10 +163,10 @@ export class DataGridComponent implements OnInit, OnDestroy {
 
   private buildDatasource(): IDatasource {
     const entityName = this.selectedEntity;
-    const search     = this.searchText();
-    const sortField  = this.sortField;
-    const sortDir    = this.sortDir;
-    const isFirst    = { done: false }; // track first call per datasource instance
+    const search = this.searchText();
+    const sortField = this.sortField;
+    const sortDir = this.sortDir;
+    const isFirst = { done: false }; // track first call per datasource instance
 
     return {
       getRows: (params: IGetRowsParams) => {
@@ -160,33 +177,36 @@ export class DataGridComponent implements OnInit, OnDestroy {
         // Sort from params overrides the component-level sort state
         const activeSortModel = params.sortModel[0];
         const sf = activeSortModel?.colId ?? sortField;
-        const sd = (activeSortModel?.sort as 'asc' | 'desc' | undefined) ?? sortDir;
+        const sd =
+          (activeSortModel?.sort as 'asc' | 'desc' | undefined) ?? sortDir;
 
-        this.api.getEntityData(entityName, {
-          page,
-          pageSize: PAGE_SIZE,
-          ...(search   ? { search }   : {}),
-          ...(sf       ? { sortField: sf, ...(sd ? { sortDir: sd } : {}) } : {}),
-        }).subscribe({
-          next: (result) => {
-            this.loading.set(false);
-            this.totalRows.set(result.total);
+        this.api
+          .getEntityData(entityName, {
+            page,
+            pageSize: PAGE_SIZE,
+            ...(search ? { search } : {}),
+            ...(sf ? { sortField: sf, ...(sd ? { sortDir: sd } : {}) } : {}),
+          })
+          .subscribe({
+            next: (result) => {
+              this.loading.set(false);
+              this.totalRows.set(result.total);
 
-            if (!isFirst.done && result.fields.length > 0) {
-              isFirst.done = true;
-              this.setColDefs(result.fields);
-              if (entityName === 'revisionHistory') {
-                this.buildChart(result.data);
+              if (!isFirst.done && result.fields.length > 0) {
+                isFirst.done = true;
+                this.setColDefs(result.fields);
+                // if (entityName === 'revisionHistory') {
+                //   this.buildChart(result.data);
+                // }
               }
-            }
 
-            params.successCallback(result.data, result.total);
-          },
-          error: () => {
-            this.loading.set(false);
-            params.failCallback();
-          },
-        });
+              params.successCallback(result.data, result.total);
+            },
+            error: () => {
+              this.loading.set(false);
+              params.failCallback();
+            },
+          });
       },
     };
   }
@@ -234,7 +254,11 @@ export class DataGridComponent implements OnInit, OnDestroy {
       ],
       axes: [
         { type: 'category', position: 'bottom', label: { rotation: 0 } },
-        { type: 'number', position: 'left', label: { formatter: ({ value }: { value: number }) => String(value) } },
+        {
+          type: 'number',
+          position: 'left',
+          label: { formatter: ({ value }: { value: number }) => String(value) },
+        },
       ],
       legend: { enabled: false },
       padding: { top: 8, right: 16, bottom: 8, left: 16 },

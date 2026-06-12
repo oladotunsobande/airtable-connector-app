@@ -55,4 +55,8 @@ export class MongoPageRepository implements IPageRepository {
   async count(): Promise<number> {
     return PageModel.countDocuments();
   }
+
+  async resetAllRevisionStatus(): Promise<void> {
+    await PageModel.updateMany({}, { $set: { revisionStatus: 'pending' } });
+  }
 }

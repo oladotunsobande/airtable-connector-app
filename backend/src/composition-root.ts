@@ -18,7 +18,8 @@ import { TokenProvider } from './modules/airtable/auth/token-provider.js';
 import { AirtableApiService } from './modules/airtable/api/airtable-api.service.js';
 import { IngestService } from './modules/airtable/api/ingest.service.js';
 import { PipelineProducer } from './modules/airtable/pipeline/pipeline-producer.js';
-import { CronScheduler } from './modules/airtable/cron/cron-scheduler.js';
+import { PipelineWorkers } from './modules/airtable/cron/cron-scheduler.js';
+import { ScrapeRunService } from './modules/airtable/pipeline/scrape-run.service.js';
 import { PuppeteerBrowserManager } from './infrastructure/browser/puppeteer-browser-manager.js';
 import { SessionOrchestrator } from './modules/airtable/scraping/session-orchestrator.js';
 import { RevisionHistoryParser } from './modules/airtable/scraping/revision-history.parser.js';
@@ -61,7 +62,8 @@ export interface Application {
   ingestService: IIngestService;
   // Pipeline
   pipelineProducer: PipelineProducer;
-  cronScheduler: CronScheduler;
+  pipelineWorkers: PipelineWorkers;
+  scrapeRunService: ScrapeRunService;
   // Scraping
   browserManager: PuppeteerBrowserManager;
   sessionOrchestrator: ISessionOrchestrator;
@@ -136,9 +138,9 @@ export function buildApplication(): Application {
     log.child('revision'),
   );
 
-  // ── Phase 5: Pipeline & Cron (depends on Phase 7 revisionHistoryService) ─────
+  // ── Phase 5: Pipeline workers (on-demand, no repeating scheduler) ─────────────
   const pipelineProducer = new PipelineProducer(queueManager);
-  const cronScheduler = new CronScheduler(
+  const pipelineWorkers = new PipelineWorkers(
     config,
     queueManager,
     baseRepository,
@@ -147,19 +149,29 @@ export function buildApplication(): Application {
     ingestService,
     revisionHistoryService,
     pipelineProducer,
-    log.child('cron'),
+    log.child('pipeline'),
+  );
+
+  const scrapeRunService = new ScrapeRunService(
+    queueManager,
+    baseRepository,
+    pageRepository,
+    sessionOrchestrator,
+    config.redis,
+    log.child('scrape-run'),
   );
 
   // ── Phase 8: Entities API ────────────────────────────────────────────────────
   const entitiesService = new EntitiesService();
 
-  // ── HTTP Server (grows with each phase) ──────────────────────────────────────
+  // ── HTTP Server ──────────────────────────────────────────────────────────────
   const httpServer = new HttpServer({
     config,
     oauthService,
     tokenProvider,
     tokenRepository,
     sessionOrchestrator,
+    scrapeRunService,
     entitiesService,
     log: log.child('http-server'),
   });
@@ -186,7 +198,8 @@ export function buildApplication(): Application {
     apiService,
     ingestService,
     pipelineProducer,
-    cronScheduler,
+    pipelineWorkers,
+    scrapeRunService,
     browserManager,
     sessionOrchestrator,
     revisionHistoryService,

@@ -1,14 +1,23 @@
-import http from 'node:http';
-import express, { type Express, type Request, type Response, type NextFunction } from 'express';
-import type { AppConfig } from '../config/index.js';
-import type { Logger } from '../core/logger/index.js';
-import { AppError } from '../core/errors/index.js';
-import type { IOAuthService } from '../modules/airtable/auth/oauth.service.interface.js';
-import type { ITokenProvider } from '../modules/airtable/auth/token-provider.interface.js';
-import type { ITokenRepository } from '../modules/airtable/auth/token.repository.interface.js';
-import type { ISessionOrchestrator } from '../modules/airtable/scraping/session-orchestrator.interface.js';
-import type { IEntitiesService, FilterOp } from './entities/entities.service.interface.js';
-import { KNOWN_ENTITIES } from './entities/entities.service.js';
+import http from "node:http";
+import express, {
+  type Express,
+  type Request,
+  type Response,
+  type NextFunction,
+} from "express";
+import type { AppConfig } from "../config/index.js";
+import type { Logger } from "../core/logger/index.js";
+import { AppError } from "../core/errors/index.js";
+import type { IOAuthService } from "../modules/airtable/auth/oauth.service.interface.js";
+import type { ITokenProvider } from "../modules/airtable/auth/token-provider.interface.js";
+import type { ITokenRepository } from "../modules/airtable/auth/token.repository.interface.js";
+import type { ISessionOrchestrator } from "../modules/airtable/scraping/session-orchestrator.interface.js";
+import type { ScrapeRunService } from "../modules/airtable/pipeline/scrape-run.service.js";
+import type {
+  IEntitiesService,
+  FilterOp,
+} from "./entities/entities.service.interface.js";
+import { KNOWN_ENTITIES } from "./entities/entities.service.js";
 
 export interface HttpServerDeps {
   config: AppConfig;
@@ -17,6 +26,8 @@ export interface HttpServerDeps {
   tokenRepository: ITokenRepository;
   /** Phase 6+: optional so Phase 3 tests remain unaffected. */
   sessionOrchestrator?: ISessionOrchestrator;
+  /** Scrape-run lifecycle + SSE streaming. */
+  scrapeRunService?: ScrapeRunService;
   /** Phase 8+: optional so earlier tests remain unaffected. */
   entitiesService?: IEntitiesService;
   log: Logger;
@@ -39,6 +50,7 @@ export class HttpServer {
   private readonly app: Express;
   private server: http.Server | null = null;
   private readonly pendingAuth = new Map<string, PendingAuth>();
+  private log: Logger;
 
   constructor(private readonly deps: HttpServerDeps) {
     this.app = express();
@@ -46,15 +58,25 @@ export class HttpServer {
     this.app.use(this.cors.bind(this));
     this.registerRoutes();
     this.app.use(this.errorHandler.bind(this));
+    this.log = deps.log;
   }
 
   // ── CORS ──────────────────────────────────────────────────────────────────
 
   private cors(req: Request, res: Response, next: NextFunction): void {
-    res.setHeader('Access-Control-Allow-Origin', 'http://localhost:4200');
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
-    if (req.method === 'OPTIONS') {
+    const allowedOrigins = this.deps.config.corsOrigins;
+    const requestOrigin = req.headers.origin ?? "";
+    const origin = allowedOrigins.includes(requestOrigin)
+      ? requestOrigin
+      : (allowedOrigins[0] ?? "http://localhost:4200");
+
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader(
+      "Access-Control-Allow-Methods",
+      "GET,POST,PUT,DELETE,OPTIONS",
+    );
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization");
+    if (req.method === "OPTIONS") {
       res.sendStatus(204);
       return;
     }
@@ -78,11 +100,17 @@ export class HttpServer {
      * Generates a PKCE code verifier + state, stores them, and redirects the
      * user to Airtable's OAuth consent page.
      */
-    this.app.get('/auth/airtable/start', (_req: Request, res: Response) => {
+    this.app.get("/auth/airtable/start", (_req: Request, res: Response) => {
       // Purge stale pending entries on each new attempt.
       this.purgeStalePendingAuth();
 
-      const { url, codeVerifier, state } = this.deps.oauthService.buildAuthorizationUrl();
+      const { url, codeVerifier, state } =
+        this.deps.oauthService.buildAuthorizationUrl();
+      this.log.info("authorization response", {
+        url,
+        codeVerifier,
+        state,
+      });
 
       this.pendingAuth.set(state, {
         codeVerifier,
@@ -90,7 +118,7 @@ export class HttpServer {
         expiresAt: Date.now() + PENDING_AUTH_TTL_MS,
       });
 
-      this.deps.log.info('OAuth flow started', { state });
+      this.deps.log.info("OAuth flow started", { state });
       res.redirect(url);
     });
 
@@ -100,25 +128,43 @@ export class HttpServer {
      * persists them, then redirects the user back to the frontend.
      */
     this.app.get(
-      '/auth/airtable/callback',
+      "/auth/airtable/callback",
       async (req: Request, res: Response, next: NextFunction) => {
         try {
-          const { code, state: receivedState, error, error_description } = req.query as Record<string, string | undefined>;
+          const {
+            code,
+            state: receivedState,
+            error,
+            error_description,
+          } = req.query as Record<string, string | undefined>;
+          console.log({
+            code,
+            receivedState,
+            error,
+            errorDesc: error_description,
+          });
 
           if (error) {
-            this.deps.log.warn('OAuth callback error from Airtable', { error, error_description });
-            res.redirect(`http://localhost:4200/integrations?error=${encodeURIComponent(error ?? 'unknown')}`);
+            this.deps.log.warn("OAuth callback error from Airtable", {
+              error,
+              error_description,
+            });
+            const frontendOrigin =
+              this.deps.config.corsOrigins[0] ?? "http://localhost:4200";
+            res.redirect(
+              `${frontendOrigin}/integrations?error=${encodeURIComponent(error ?? "unknown")}`,
+            );
             return;
           }
 
           if (!code || !receivedState) {
-            res.status(400).json({ error: 'Missing code or state parameter' });
+            res.status(400).json({ error: "Missing code or state parameter" });
             return;
           }
 
           const pending = this.pendingAuth.get(receivedState);
           if (!pending || pending.expiresAt < Date.now()) {
-            res.status(400).json({ error: 'Invalid or expired OAuth state' });
+            res.status(400).json({ error: "Invalid or expired OAuth state" });
             return;
           }
 
@@ -132,9 +178,11 @@ export class HttpServer {
           );
 
           await this.deps.tokenRepository.save(tokenSet);
-          this.deps.log.info('OAuth tokens stored', { scope: tokenSet.scope });
+          this.deps.log.info("OAuth tokens stored", { scope: tokenSet.scope });
 
-          res.redirect('http://localhost:4200/integrations?connected=true');
+          const frontendOrigin =
+            this.deps.config.corsOrigins[0] ?? "http://localhost:4200";
+          res.redirect(`${frontendOrigin}/integrations?connected=true`);
         } catch (err) {
           next(err);
         }
@@ -145,25 +193,28 @@ export class HttpServer {
      * GET /auth/status
      * Returns whether a valid OAuth token is currently stored.
      */
-    this.app.get('/auth/status', async (_req: Request, res: Response, next: NextFunction) => {
-      try {
-        const connected = await this.deps.tokenProvider.isConnected();
-        res.json({ connected });
-      } catch (err) {
-        next(err);
-      }
-    });
+    this.app.get(
+      "/auth/status",
+      async (_req: Request, res: Response, next: NextFunction) => {
+        try {
+          const connected = await this.deps.tokenProvider.isConnected();
+          res.json({ connected });
+        } catch (err) {
+          next(err);
+        }
+      },
+    );
 
     /**
      * DELETE /auth/airtable/disconnect
      * Removes the stored tokens, requiring re-authentication.
      */
     this.app.delete(
-      '/auth/airtable/disconnect',
+      "/auth/airtable/disconnect",
       async (_req: Request, res: Response, next: NextFunction) => {
         try {
           await this.deps.tokenRepository.delete();
-          this.deps.log.info('OAuth tokens removed');
+          this.deps.log.info("OAuth tokens removed");
           res.json({ disconnected: true });
         } catch (err) {
           next(err);
@@ -176,70 +227,110 @@ export class HttpServer {
 
   private registerScrapingRoutes(): void {
     const orchestrator = this.deps.sessionOrchestrator;
+    const runSvc = this.deps.scrapeRunService;
 
     /**
-     * POST /scraping/start
-     * Initiates a Puppeteer login if no valid session exists.
-     * Returns immediately with { sessionId, state }; the login runs in the
-     * background. Poll GET /scraping/session to track progress.
+     * POST /scraping/run
+     * Starts (or continues after MFA) a manual scraping run.
+     * Returns { runId, status } or 409 if a run is already active.
      */
-    this.app.post(
-      '/scraping/start',
-      async (_req: Request, res: Response, next: NextFunction) => {
-        if (!orchestrator) {
-          res.status(503).json({ error: 'SCRAPING_UNAVAILABLE', message: 'Scraping service not configured' });
-          return;
-        }
-        try {
-          const result = await orchestrator.startLogin();
-          res.json(result);
-        } catch (err) {
-          next(err);
-        }
-      },
-    );
+    this.app.post("/scraping/run", (_req: Request, res: Response) => {
+      if (!runSvc) {
+        res.status(503).json({
+          error: "SCRAPING_UNAVAILABLE",
+          message: "Scraping service not configured",
+        });
+        return;
+      }
+      const result = runSvc.start();
+      if ("conflict" in result) {
+        res.status(409).json({
+          error: "RUN_IN_PROGRESS",
+          message: "A scraping run is already active.",
+        });
+        return;
+      }
+      res.json(result);
+    });
 
     /**
-     * GET /scraping/session
-     * Returns the current scrape session state (for polling after /scraping/start).
+     * GET /scraping/run
+     * Returns the current run snapshot { runId, status, error, startedAt, finishedAt }.
      */
-    this.app.get(
-      '/scraping/session',
-      async (_req: Request, res: Response, next: NextFunction) => {
-        if (!orchestrator) {
-          res.json({ sessionId: null, state: null, hasCookies: false, validatedAt: null });
-          return;
-        }
-        try {
-          const session = await orchestrator.getSessionState();
-          res.json({
-            sessionId: session?.sessionId ?? null,
-            state: session?.state ?? null,
-            hasCookies: (session?.cookies.length ?? 0) > 0,
-            validatedAt: session?.validatedAt?.toISOString() ?? null,
-          });
-        } catch (err) {
-          next(err);
-        }
-      },
-    );
+    this.app.get("/scraping/run", (_req: Request, res: Response) => {
+      if (!runSvc) {
+        res.json({
+          runId: null,
+          status: "idle",
+          error: null,
+          startedAt: null,
+          finishedAt: null,
+        });
+        return;
+      }
+      const run = runSvc.getCurrentRun();
+      if (!run) {
+        res.json({
+          runId: null,
+          status: "idle",
+          error: null,
+          startedAt: null,
+          finishedAt: null,
+        });
+        return;
+      }
+      res.json(run);
+    });
+
+    /**
+     * GET /scraping/run/stream
+     * SSE stream — emits buffered + live log events, then a terminal status event.
+     */
+    this.app.get("/scraping/run/stream", (req: Request, res: Response) => {
+      if (!runSvc) {
+        res.status(503).json({
+          error: "SCRAPING_UNAVAILABLE",
+          message: "Scraping service not configured",
+        });
+        return;
+      }
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+      // Do NOT set Access-Control-Allow-Origin here — the cors() middleware
+      // already set it correctly for the request origin (including ngrok URLs).
+      res.flushHeaders();
+
+      runSvc.addSseClient(res);
+      req.on("close", () => runSvc.removeSseClient(res));
+    });
 
     /**
      * POST /scraping/mfa
      * Body: { sessionId: string, code: string }
      * Feeds a TOTP code into the paused Puppeteer login flow.
+     * After success the frontend re-POSTs /scraping/run to continue.
      */
     this.app.post(
-      '/scraping/mfa',
+      "/scraping/mfa",
       async (req: Request, res: Response, next: NextFunction) => {
         if (!orchestrator) {
-          res.status(503).json({ error: 'SCRAPING_UNAVAILABLE', message: 'Scraping service not configured' });
+          res.status(503).json({
+            error: "SCRAPING_UNAVAILABLE",
+            message: "Scraping service not configured",
+          });
           return;
         }
         try {
-          const { sessionId, code } = req.body as { sessionId?: string; code?: string };
+          const { sessionId, code } = req.body as {
+            sessionId?: string;
+            code?: string;
+          };
           if (!sessionId || !code) {
-            res.status(400).json({ error: 'BAD_REQUEST', message: 'sessionId and code are required' });
+            res.status(400).json({
+              error: "BAD_REQUEST",
+              message: "sessionId and code are required",
+            });
             return;
           }
           await orchestrator.submitMfaCode(sessionId, code);
@@ -259,11 +350,11 @@ export class HttpServer {
      * Returns the list of supported integrations and their connection state.
      */
     this.app.get(
-      '/integrations',
+      "/integrations",
       async (_req: Request, res: Response, next: NextFunction) => {
         try {
           const connected = await this.deps.tokenProvider.isConnected();
-          res.json([{ id: 'airtable', name: 'Airtable', connected }]);
+          res.json([{ id: "airtable", name: "Airtable", connected }]);
         } catch (err) {
           next(err);
         }
@@ -281,7 +372,7 @@ export class HttpServer {
      * Lists available entity collections with document counts.
      */
     this.app.get(
-      '/entities',
+      "/entities",
       async (_req: Request, res: Response, next: NextFunction) => {
         if (!svc) {
           res.json(KNOWN_ENTITIES.map((name) => ({ name, count: 0 })));
@@ -312,42 +403,53 @@ export class HttpServer {
      *   filterValue string value to compare against
      */
     this.app.get(
-      '/entities/:name/data',
+      "/entities/:name/data",
       async (req: Request, res: Response, next: NextFunction) => {
         if (!svc) {
-          res.status(503).json({ error: 'ENTITIES_UNAVAILABLE', message: 'Entity service not configured' });
+          res.status(503).json({
+            error: "ENTITIES_UNAVAILABLE",
+            message: "Entity service not configured",
+          });
           return;
         }
 
-        const name = req.params['name'] as string;
+        const name = req.params["name"] as string;
         if (!KNOWN_ENTITIES.includes(name)) {
-          res.status(404).json({ error: 'NOT_FOUND', message: `Unknown entity: ${name}` });
+          res
+            .status(404)
+            .json({ error: "NOT_FOUND", message: `Unknown entity: ${name}` });
           return;
         }
 
         const q = req.query as Record<string, string | undefined>;
 
-        const page = Math.max(1, parseInt(q['page'] ?? '1', 10) || 1);
-        const pageSize = Math.min(200, Math.max(1, parseInt(q['pageSize'] ?? '50', 10) || 50));
+        const page = Math.max(1, parseInt(q["page"] ?? "1", 10) || 1);
+        const pageSize = Math.min(
+          200,
+          Math.max(1, parseInt(q["pageSize"] ?? "50", 10) || 50),
+        );
 
-        const validFilterOps: FilterOp[] = ['eq', 'contains', 'gt', 'lt'];
-        const rawFilterOp = q['filterOp'];
+        const validFilterOps: FilterOp[] = ["eq", "contains", "gt", "lt"];
+        const rawFilterOp = q["filterOp"];
         const filterOp: FilterOp | undefined =
           rawFilterOp && (validFilterOps as string[]).includes(rawFilterOp)
             ? (rawFilterOp as FilterOp)
             : undefined;
 
         try {
-          const sortDir = q['sortDir'] === 'asc' || q['sortDir'] === 'desc' ? q['sortDir'] : undefined;
+          const sortDir =
+            q["sortDir"] === "asc" || q["sortDir"] === "desc"
+              ? q["sortDir"]
+              : undefined;
           const result = await svc.queryEntity(name, {
             page,
             pageSize,
-            ...(q['search'] ? { search: q['search'] } : {}),
-            ...(q['sortField'] ? { sortField: q['sortField'] } : {}),
+            ...(q["search"] ? { search: q["search"] } : {}),
+            ...(q["sortField"] ? { sortField: q["sortField"] } : {}),
             ...(sortDir ? { sortDir } : {}),
-            ...(q['filterField'] ? { filterField: q['filterField'] } : {}),
+            ...(q["filterField"] ? { filterField: q["filterField"] } : {}),
             ...(filterOp ? { filterOp } : {}),
-            ...(q['filterValue'] ? { filterValue: q['filterValue'] } : {}),
+            ...(q["filterValue"] ? { filterValue: q["filterValue"] } : {}),
           });
           res.json(result);
         } catch (err) {
@@ -359,19 +461,30 @@ export class HttpServer {
 
   // ── Error handler ─────────────────────────────────────────────────────────
 
-  private errorHandler(err: unknown, _req: Request, res: Response, _next: NextFunction): void {
+  private errorHandler(
+    err: unknown,
+    _req: Request,
+    res: Response,
+    _next: NextFunction,
+  ): void {
     if (err instanceof AppError) {
-      this.deps.log.warn('Application error', { code: err.code, message: err.message });
-      res.status(err.statusCode).json({ error: err.code, message: err.message });
+      this.deps.log.warn("Application error", {
+        code: err.code,
+        message: err.message,
+      });
+      res
+        .status(err.statusCode)
+        .json({ error: err.code, message: err.message });
       return;
     }
 
-    const message = err instanceof Error ? err.message : 'Internal server error';
-    this.deps.log.error('Unhandled error', {
+    const message =
+      err instanceof Error ? err.message : "Internal server error";
+    this.deps.log.error("Unhandled error", {
       error: message,
       stack: err instanceof Error ? err.stack : undefined,
     });
-    res.status(500).json({ error: 'INTERNAL_ERROR', message });
+    res.status(500).json({ error: "INTERNAL_ERROR", message });
   }
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -379,7 +492,9 @@ export class HttpServer {
   start(): Promise<void> {
     return new Promise((resolve) => {
       this.server = this.app.listen(this.deps.config.port, () => {
-        this.deps.log.info('HTTP server listening', { port: this.deps.config.port });
+        this.deps.log.info("HTTP server listening", {
+          port: this.deps.config.port,
+        });
         resolve();
       });
     });
@@ -387,7 +502,10 @@ export class HttpServer {
 
   stop(): Promise<void> {
     return new Promise((resolve, reject) => {
-      if (!this.server) { resolve(); return; }
+      if (!this.server) {
+        resolve();
+        return;
+      }
       this.server.close((err) => (err ? reject(err) : resolve()));
     });
   }

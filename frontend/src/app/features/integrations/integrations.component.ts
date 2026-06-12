@@ -8,7 +8,8 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ApiService } from '../../core/api/api.service';
 import type { Integration } from '../../core/models/api.models';
 
-const BACKEND_OAUTH_START = 'http://localhost:3000/auth/airtable/start';
+const BACKEND_OAUTH_START =
+  'https://dividend-shape-chokehold.ngrok-free.dev/auth/airtable/start';
 
 @Component({
   selector: 'app-integrations',
@@ -50,8 +51,10 @@ export class IntegrationsComponent implements OnInit {
   }
 
   disconnect(_integration: Integration): void {
-    fetch('http://localhost:3000/auth/airtable/disconnect', { method: 'DELETE' })
-      .finally(() => this.loadIntegrations());
+    console.log('na disconnect');
+    fetch('http://localhost:3000/auth/airtable/disconnect', {
+      method: 'DELETE',
+    }).finally(() => this.loadIntegrations());
   }
 
   private loadIntegrations(): void {
@@ -61,10 +64,13 @@ export class IntegrationsComponent implements OnInit {
         this.integrations.set(list);
         this.loading.set(false);
       },
-      error: () => {
+      error: (error) => {
+        console.error(error);
         this.loading.set(false);
         if (!this.statusMessage()) {
-          this.statusMessage.set('Could not reach backend. Ensure it is running on port 3000.');
+          this.statusMessage.set(
+            'Could not reach backend. Ensure it is running on port 3000.',
+          );
           this.statusType.set('error');
         }
       },

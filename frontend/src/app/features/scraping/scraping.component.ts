@@ -1,11 +1,11 @@
-import { Component, inject, signal, OnInit, OnDestroy } from '@angular/core';
+import { Component, inject, effect, ViewChild, ElementRef, OnDestroy } from '@angular/core';
 import { MatCardModule } from '@angular/material/card';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatChipsModule } from '@angular/material/chips';
-import { ApiService } from '../../core/api/api.service';
+import { ScrapeRunStore } from '../../core/scrape-run/scrape-run.store';
 import { MfaDialogComponent } from './mfa-dialog.component';
 
 @Component({
@@ -21,64 +21,50 @@ import { MfaDialogComponent } from './mfa-dialog.component';
   templateUrl: './scraping.component.html',
   styleUrl: './scraping.component.scss',
 })
-export class ScrapingComponent implements OnInit, OnDestroy {
-  private readonly api = inject(ApiService);
+export class ScrapingComponent implements OnDestroy {
+  protected readonly store = inject(ScrapeRunStore);
   private readonly dialog = inject(MatDialog);
 
-  sessionState = signal<string | null>(null);
-  currentSessionId = signal<string | null>(null);
-  isStarting = signal(false);
-  errorMsg = signal('');
+  @ViewChild('logPanel') logPanelRef?: ElementRef<HTMLDivElement>;
 
-  private pollHandle?: ReturnType<typeof setInterval>;
+  private mfaDialogOpen = false;
 
-  ngOnInit(): void {
-    this.refreshSession();
+  constructor() {
+    // Open MFA dialog when the store enters awaiting_mfa
+    effect(() => {
+      if (this.store.status() === 'awaiting_mfa' && !this.mfaDialogOpen) {
+        this.openMfaDialog();
+      }
+    });
+
+    // Auto-scroll log panel when logs grow
+    effect(() => {
+      this.store.logs(); // track signal
+      requestAnimationFrame(() => {
+        const el = this.logPanelRef?.nativeElement;
+        if (el) el.scrollTop = el.scrollHeight;
+      });
+    });
   }
 
   ngOnDestroy(): void {
-    this.stopPolling();
-  }
-
-  refreshSession(): void {
-    this.api.getScrapingSession().subscribe({
-      next: (s) => {
-        this.sessionState.set(s.state);
-        this.currentSessionId.set(s.sessionId);
-      },
-      error: () => {
-        this.errorMsg.set('Could not reach backend. Ensure it is running on port 3000.');
-      },
-    });
+    this.store.closeStream();
   }
 
   startScraping(): void {
-    this.isStarting.set(true);
-    this.errorMsg.set('');
-
-    this.api.startScraping().subscribe({
-      next: (res) => {
-        this.isStarting.set(false);
-        this.currentSessionId.set(res.sessionId);
-        this.sessionState.set(res.state);
-
-        if (res.state === 'awaiting_mfa') {
-          this.openMfaDialog();
-        } else {
-          this.startPolling();
-        }
-      },
-      error: (err) => {
-        this.isStarting.set(false);
-        this.errorMsg.set(err?.error?.message ?? 'Failed to start scraping session.');
-      },
-    });
+    this.store.start();
   }
 
-  openMfaDialog(): void {
-    const sessionId = this.currentSessionId();
+  get isActive(): boolean {
+    const s = this.store.status();
+    return s === 'logging_in' || s === 'awaiting_mfa' || s === 'running';
+  }
+
+  private openMfaDialog(): void {
+    const sessionId = this.store.sessionId();
     if (!sessionId) return;
 
+    this.mfaDialogOpen = true;
     const ref = this.dialog.open(MfaDialogComponent, {
       width: '400px',
       data: { sessionId },
@@ -86,30 +72,11 @@ export class ScrapingComponent implements OnInit, OnDestroy {
     });
 
     ref.afterClosed().subscribe((submitted: boolean) => {
+      this.mfaDialogOpen = false;
       if (submitted) {
-        this.startPolling();
+        // MFA code accepted — re-POST /scraping/run to continue the run
+        this.store.start();
       }
     });
-  }
-
-  private startPolling(): void {
-    this.stopPolling();
-    this.pollHandle = setInterval(() => {
-      this.api.getScrapingSession().subscribe({
-        next: (s) => {
-          this.sessionState.set(s.state);
-          if (s.state === 'active' || s.state === 'expired' || s.state === 'invalid') {
-            this.stopPolling();
-          }
-        },
-      });
-    }, 3000);
-  }
-
-  private stopPolling(): void {
-    if (this.pollHandle !== undefined) {
-      clearInterval(this.pollHandle);
-      this.pollHandle = undefined;
-    }
   }
 }

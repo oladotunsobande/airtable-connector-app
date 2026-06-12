@@ -65,7 +65,7 @@ export class FetchHttpClient implements IHttpClient {
 
       try {
         const init: RequestInit = { method, headers, signal };
-        if (body !== undefined) init.body = JSON.stringify(body);
+        if (body !== undefined) init.body = typeof body === 'string' ? body : JSON.stringify(body);
 
         const response = await fetch(url, init);
 

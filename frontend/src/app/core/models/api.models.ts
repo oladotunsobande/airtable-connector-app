@@ -29,14 +29,24 @@ export interface QueryOptions {
   filterValue?: string;
 }
 
-export interface ScrapingSession {
-  sessionId: string | null;
-  state: string | null;
-  hasCookies: boolean;
-  validatedAt: string | null;
+export type RunStatus =
+  | 'idle'
+  | 'logging_in'
+  | 'awaiting_mfa'
+  | 'running'
+  | 'completed'
+  | 'failed';
+
+export interface RunSnapshot {
+  runId: string | null;
+  status: RunStatus;
+  error: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
 }
 
-export interface StartSessionResponse {
-  sessionId: string;
-  state: string;
+export interface StartRunResponse {
+  runId: string;
+  status: RunStatus;
+  sessionId?: string;
 }

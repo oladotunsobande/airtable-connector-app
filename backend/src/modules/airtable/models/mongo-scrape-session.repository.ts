@@ -20,7 +20,9 @@ export class MongoScrapeSessionRepository implements IScrapeSessionRepository {
   }
 
   async findActive(): Promise<ScrapeSessionDocument | null> {
-    const doc = await ScrapeSessionModel.findOne({ state: 'active' })
+    const doc = await ScrapeSessionModel.findOne({
+      state: { $in: ['active', 'awaiting_mfa'] },
+    })
       .sort({ validatedAt: -1 })
       .lean();
     return doc as ScrapeSessionDocument | null;

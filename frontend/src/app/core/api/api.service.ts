@@ -6,11 +6,11 @@ import type {
   EntityMeta,
   EntityPage,
   QueryOptions,
-  ScrapingSession,
-  StartSessionResponse,
+  RunSnapshot,
+  StartRunResponse,
 } from '../models/api.models';
 
-const API_BASE = 'http://localhost:3000';
+const API_BASE = 'http://127.0.0.1:3000';
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {
@@ -29,25 +29,30 @@ export class ApiService {
       page: String(options.page),
       pageSize: String(options.pageSize),
     };
-    if (options.search)      params['search']      = options.search;
-    if (options.sortField)   params['sortField']   = options.sortField;
-    if (options.sortDir)     params['sortDir']     = options.sortDir;
+    if (options.search) params['search'] = options.search;
+    if (options.sortField) params['sortField'] = options.sortField;
+    if (options.sortDir) params['sortDir'] = options.sortDir;
     if (options.filterField) params['filterField'] = options.filterField;
-    if (options.filterOp)    params['filterOp']    = options.filterOp;
+    if (options.filterOp) params['filterOp'] = options.filterOp;
     if (options.filterValue) params['filterValue'] = options.filterValue;
 
-    return this.http.get<EntityPage>(`${API_BASE}/entities/${name}/data`, { params });
+    return this.http.get<EntityPage>(`${API_BASE}/entities/${name}/data`, {
+      params,
+    });
   }
 
-  startScraping(): Observable<StartSessionResponse> {
-    return this.http.post<StartSessionResponse>(`${API_BASE}/scraping/start`, {});
+  startRun(): Observable<StartRunResponse> {
+    return this.http.post<StartRunResponse>(`${API_BASE}/scraping/run`, {});
+  }
+
+  getRunStatus(): Observable<RunSnapshot> {
+    return this.http.get<RunSnapshot>(`${API_BASE}/scraping/run`);
   }
 
   submitMfa(sessionId: string, code: string): Observable<void> {
-    return this.http.post<void>(`${API_BASE}/scraping/mfa`, { sessionId, code });
-  }
-
-  getScrapingSession(): Observable<ScrapingSession> {
-    return this.http.get<ScrapingSession>(`${API_BASE}/scraping/session`);
+    return this.http.post<void>(`${API_BASE}/scraping/mfa`, {
+      sessionId,
+      code,
+    });
   }
 }
