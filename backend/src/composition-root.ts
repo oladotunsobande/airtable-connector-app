@@ -6,8 +6,23 @@ import { FetchHttpClient } from './infrastructure/http/fetch-http-client.js';
 import { TokenBucketRateLimiter } from './infrastructure/rate-limit/token-bucket-rate-limiter.js';
 import { BullMqQueueManager } from './infrastructure/queue/bullmq-queue-manager.js';
 
+import { MongoBaseRepository } from './modules/airtable/models/mongo-base.repository.js';
+import { MongoTableRepository } from './modules/airtable/models/mongo-table.repository.js';
+import { MongoPageRepository } from './modules/airtable/models/mongo-page.repository.js';
+import { MongoRevisionHistoryRepository } from './modules/airtable/models/mongo-revision-history.repository.js';
+import { MongoUserRepository } from './modules/airtable/models/mongo-user.repository.js';
+import { MongoScrapeSessionRepository } from './modules/airtable/models/mongo-scrape-session.repository.js';
+import { MongoTokenRepository } from './modules/airtable/auth/mongo-token.repository.js';
+
 import type { IHttpClient } from './infrastructure/http/http-client.interface.js';
 import type { IRateLimiter } from './infrastructure/rate-limit/rate-limiter.interface.js';
+import type { IBaseRepository } from './modules/airtable/models/base.repository.interface.js';
+import type { ITableRepository } from './modules/airtable/models/table.repository.interface.js';
+import type { IPageRepository } from './modules/airtable/models/page.repository.interface.js';
+import type { IRevisionHistoryRepository } from './modules/airtable/models/revision-history.repository.interface.js';
+import type { IUserRepository } from './modules/airtable/models/user.repository.interface.js';
+import type { IScrapeSessionRepository } from './modules/airtable/models/scrape-session.repository.interface.js';
+import type { ITokenRepository } from './modules/airtable/auth/token.repository.interface.js';
 
 /**
  * The wired application surface exposed to main.ts.
@@ -17,12 +32,20 @@ import type { IRateLimiter } from './infrastructure/rate-limit/rate-limiter.inte
 export interface Application {
   config: AppConfig;
   logger: Logger;
-  // Infrastructure — exposed so main.ts can start servers / workers
+  // Infrastructure
   mongo: MongoConnection;
   queueManager: BullMqQueueManager;
-  // Shared singletons used by later phases (exposed for convenience)
+  // Shared singletons (exposed for convenience in later phases)
   httpClient: IHttpClient;
   rateLimiter: IRateLimiter;
+  // Repositories
+  baseRepository: IBaseRepository;
+  tableRepository: ITableRepository;
+  pageRepository: IPageRepository;
+  revisionHistoryRepository: IRevisionHistoryRepository;
+  userRepository: IUserRepository;
+  scrapeSessionRepository: IScrapeSessionRepository;
+  tokenRepository: ITokenRepository;
   shutdown: () => Promise<void>;
 }
 
@@ -39,24 +62,22 @@ export function buildApplication(): Application {
 
   // ── Phase 1: Core infrastructure ─────────────────────────────────────────────
   const mongo = new MongoConnection(config.mongo.uri, log.child('mongo'));
-
   const httpClient = new FetchHttpClient(log.child('http'));
-
   const rateLimiter = new TokenBucketRateLimiter(config.airtable.rps);
-
   const queueManager = new BullMqQueueManager(config.redis, log.child('queue'));
 
   // ── Phase 2: Repositories ────────────────────────────────────────────────────
-  // (uncomment after Phase 2 is implemented)
-  // const baseRepository = new MongoBaseRepository();
-  // const tableRepository = new MongoTableRepository();
-  // const pageRepository = new MongoPageRepository();
-  // const revisionHistoryRepository = new MongoRevisionHistoryRepository();
-  // const userRepository = new MongoUserRepository();
-  // const scrapeSessionRepository = new MongoScrapeSessionRepository();
+  // All repositories are stateless — they call Mongoose models which use the
+  // shared mongoose.connection established by mongo.connect().
+  const baseRepository = new MongoBaseRepository();
+  const tableRepository = new MongoTableRepository();
+  const pageRepository = new MongoPageRepository();
+  const revisionHistoryRepository = new MongoRevisionHistoryRepository();
+  const userRepository = new MongoUserRepository();
+  const scrapeSessionRepository = new MongoScrapeSessionRepository();
+  const tokenRepository = new MongoTokenRepository(config.encryption.key);
 
   // ── Phase 3: OAuth ───────────────────────────────────────────────────────────
-  // const tokenRepository = new MongoTokenRepository();
   // const oauthService = new OAuthService(config, httpClient);
   // const tokenProvider = new TokenProvider(oauthService, tokenRepository, log.child('token-provider'));
 
@@ -94,6 +115,13 @@ export function buildApplication(): Application {
     queueManager,
     httpClient,
     rateLimiter,
+    baseRepository,
+    tableRepository,
+    pageRepository,
+    revisionHistoryRepository,
+    userRepository,
+    scrapeSessionRepository,
+    tokenRepository,
     shutdown,
   };
 }
