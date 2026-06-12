@@ -23,6 +23,7 @@ import { PuppeteerBrowserManager } from './infrastructure/browser/puppeteer-brow
 import { SessionOrchestrator } from './modules/airtable/scraping/session-orchestrator.js';
 import { RevisionHistoryParser } from './modules/airtable/scraping/revision-history.parser.js';
 import { RevisionHistoryService } from './modules/airtable/scraping/revision-history.service.js';
+import { EntitiesService } from './api/entities/entities.service.js';
 import { HttpServer } from './api/http-server.js';
 
 import type { IHttpClient } from './infrastructure/http/http-client.interface.js';
@@ -149,6 +150,9 @@ export function buildApplication(): Application {
     log.child('cron'),
   );
 
+  // ── Phase 8: Entities API ────────────────────────────────────────────────────
+  const entitiesService = new EntitiesService();
+
   // ── HTTP Server (grows with each phase) ──────────────────────────────────────
   const httpServer = new HttpServer({
     config,
@@ -156,6 +160,7 @@ export function buildApplication(): Application {
     tokenProvider,
     tokenRepository,
     sessionOrchestrator,
+    entitiesService,
     log: log.child('http-server'),
   });
 

@@ -7,6 +7,8 @@ import type { IOAuthService } from '../modules/airtable/auth/oauth.service.inter
 import type { ITokenProvider } from '../modules/airtable/auth/token-provider.interface.js';
 import type { ITokenRepository } from '../modules/airtable/auth/token.repository.interface.js';
 import type { ISessionOrchestrator } from '../modules/airtable/scraping/session-orchestrator.interface.js';
+import type { IEntitiesService, FilterOp } from './entities/entities.service.interface.js';
+import { KNOWN_ENTITIES } from './entities/entities.service.js';
 
 export interface HttpServerDeps {
   config: AppConfig;
@@ -15,6 +17,8 @@ export interface HttpServerDeps {
   tokenRepository: ITokenRepository;
   /** Phase 6+: optional so Phase 3 tests remain unaffected. */
   sessionOrchestrator?: ISessionOrchestrator;
+  /** Phase 8+: optional so earlier tests remain unaffected. */
+  entitiesService?: IEntitiesService;
   log: Logger;
 }
 
@@ -62,6 +66,8 @@ export class HttpServer {
   private registerRoutes(): void {
     this.registerAuthRoutes();
     this.registerScrapingRoutes();
+    this.registerIntegrationsRoutes();
+    this.registerEntitiesRoutes();
   }
 
   // ── Auth routes ───────────────────────────────────────────────────────────
@@ -238,6 +244,112 @@ export class HttpServer {
           }
           await orchestrator.submitMfaCode(sessionId, code);
           res.status(204).send();
+        } catch (err) {
+          next(err);
+        }
+      },
+    );
+  }
+
+  // ── Integrations routes ───────────────────────────────────────────────────
+
+  private registerIntegrationsRoutes(): void {
+    /**
+     * GET /integrations
+     * Returns the list of supported integrations and their connection state.
+     */
+    this.app.get(
+      '/integrations',
+      async (_req: Request, res: Response, next: NextFunction) => {
+        try {
+          const connected = await this.deps.tokenProvider.isConnected();
+          res.json([{ id: 'airtable', name: 'Airtable', connected }]);
+        } catch (err) {
+          next(err);
+        }
+      },
+    );
+  }
+
+  // ── Entities routes ───────────────────────────────────────────────────────
+
+  private registerEntitiesRoutes(): void {
+    const svc = this.deps.entitiesService;
+
+    /**
+     * GET /entities
+     * Lists available entity collections with document counts.
+     */
+    this.app.get(
+      '/entities',
+      async (_req: Request, res: Response, next: NextFunction) => {
+        if (!svc) {
+          res.json(KNOWN_ENTITIES.map((name) => ({ name, count: 0 })));
+          return;
+        }
+        try {
+          const entities = await svc.listEntities();
+          res.json(entities);
+        } catch (err) {
+          next(err);
+        }
+      },
+    );
+
+    /**
+     * GET /entities/:name/data
+     * Returns a paginated, filterable, sortable page of documents from the
+     * named collection. Field names are inferred from the returned documents.
+     *
+     * Query params:
+     *   page        integer ≥1 (default 1)
+     *   pageSize    integer 1–200 (default 50)
+     *   search      free-text match across all string fields
+     *   sortField   field name
+     *   sortDir     "asc" | "desc" (default "desc")
+     *   filterField field name
+     *   filterOp    "eq" | "contains" | "gt" | "lt" (default "eq")
+     *   filterValue string value to compare against
+     */
+    this.app.get(
+      '/entities/:name/data',
+      async (req: Request, res: Response, next: NextFunction) => {
+        if (!svc) {
+          res.status(503).json({ error: 'ENTITIES_UNAVAILABLE', message: 'Entity service not configured' });
+          return;
+        }
+
+        const name = req.params['name'] as string;
+        if (!KNOWN_ENTITIES.includes(name)) {
+          res.status(404).json({ error: 'NOT_FOUND', message: `Unknown entity: ${name}` });
+          return;
+        }
+
+        const q = req.query as Record<string, string | undefined>;
+
+        const page = Math.max(1, parseInt(q['page'] ?? '1', 10) || 1);
+        const pageSize = Math.min(200, Math.max(1, parseInt(q['pageSize'] ?? '50', 10) || 50));
+
+        const validFilterOps: FilterOp[] = ['eq', 'contains', 'gt', 'lt'];
+        const rawFilterOp = q['filterOp'];
+        const filterOp: FilterOp | undefined =
+          rawFilterOp && (validFilterOps as string[]).includes(rawFilterOp)
+            ? (rawFilterOp as FilterOp)
+            : undefined;
+
+        try {
+          const sortDir = q['sortDir'] === 'asc' || q['sortDir'] === 'desc' ? q['sortDir'] : undefined;
+          const result = await svc.queryEntity(name, {
+            page,
+            pageSize,
+            ...(q['search'] ? { search: q['search'] } : {}),
+            ...(q['sortField'] ? { sortField: q['sortField'] } : {}),
+            ...(sortDir ? { sortDir } : {}),
+            ...(q['filterField'] ? { filterField: q['filterField'] } : {}),
+            ...(filterOp ? { filterOp } : {}),
+            ...(q['filterValue'] ? { filterValue: q['filterValue'] } : {}),
+          });
+          res.json(result);
         } catch (err) {
           next(err);
         }
