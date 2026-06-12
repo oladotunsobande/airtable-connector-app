@@ -1,0 +1,41 @@
+// Custom Theming for Angular Material
+@use '@angular/material' as mat;
+
+@import url('https://fonts.googleapis.com/icon?family=Material+Icons');
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap');
+
+html {
+  @include mat.theme((
+    color: (
+      theme-type: light,
+      primary: mat.$azure-palette,
+      tertiary: mat.$blue-palette,
+    ),
+    typography: Roboto,
+    density: 0,
+  ));
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: Roboto, 'Helvetica Neue', sans-serif;
+  background-color: #f5f5f5;
+  color: rgba(0, 0, 0, 0.87);
+}
+
+// AG Grid theme override
+.ag-theme-material {
+  --ag-font-family: Roboto, 'Helvetica Neue', sans-serif;
+  --ag-font-size: 13px;
+}

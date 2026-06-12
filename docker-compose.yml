@@ -1,0 +1,27 @@
+version: '3.9'
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: airtable_connector_mongo
+    restart: unless-stopped
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongo_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: airtable_connector
+
+  redis:
+    image: redis:7
+    container_name: airtable_connector_redis
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    command: ['redis-server', '--appendonly', 'yes']
+
+volumes:
+  mongo_data:
+  redis_data:

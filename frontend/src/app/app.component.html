@@ -1,0 +1,19 @@
+<mat-sidenav-container class="app-container">
+  <mat-sidenav-content>
+    <mat-toolbar color="primary" class="app-toolbar">
+      <mat-icon>hub</mat-icon>
+      <span class="toolbar-title">Airtable Connector</span>
+      <span class="toolbar-spacer"></span>
+      <button mat-icon-button routerLink="/integrations" title="Integrations">
+        <mat-icon>link</mat-icon>
+      </button>
+      <button mat-icon-button routerLink="/scraping" title="Scraping">
+        <mat-icon>manage_search</mat-icon>
+      </button>
+    </mat-toolbar>
+
+    <main class="app-content">
+      <router-outlet />
+    </main>
+  </mat-sidenav-content>
+</mat-sidenav-container>
