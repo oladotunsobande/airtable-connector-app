@@ -13,6 +13,9 @@ import { MongoRevisionHistoryRepository } from './modules/airtable/models/mongo-
 import { MongoUserRepository } from './modules/airtable/models/mongo-user.repository.js';
 import { MongoScrapeSessionRepository } from './modules/airtable/models/mongo-scrape-session.repository.js';
 import { MongoTokenRepository } from './modules/airtable/auth/mongo-token.repository.js';
+import { OAuthService } from './modules/airtable/auth/oauth.service.js';
+import { TokenProvider } from './modules/airtable/auth/token-provider.js';
+import { HttpServer } from './api/http-server.js';
 
 import type { IHttpClient } from './infrastructure/http/http-client.interface.js';
 import type { IRateLimiter } from './infrastructure/rate-limit/rate-limiter.interface.js';
@@ -23,6 +26,8 @@ import type { IRevisionHistoryRepository } from './modules/airtable/models/revis
 import type { IUserRepository } from './modules/airtable/models/user.repository.interface.js';
 import type { IScrapeSessionRepository } from './modules/airtable/models/scrape-session.repository.interface.js';
 import type { ITokenRepository } from './modules/airtable/auth/token.repository.interface.js';
+import type { IOAuthService } from './modules/airtable/auth/oauth.service.interface.js';
+import type { ITokenProvider } from './modules/airtable/auth/token-provider.interface.js';
 
 /**
  * The wired application surface exposed to main.ts.
@@ -35,9 +40,14 @@ export interface Application {
   // Infrastructure
   mongo: MongoConnection;
   queueManager: BullMqQueueManager;
+  httpServer: HttpServer;
   // Shared singletons (exposed for convenience in later phases)
   httpClient: IHttpClient;
   rateLimiter: IRateLimiter;
+  // Auth
+  oauthService: IOAuthService;
+  tokenProvider: ITokenProvider;
+  tokenRepository: ITokenRepository;
   // Repositories
   baseRepository: IBaseRepository;
   tableRepository: ITableRepository;
@@ -45,7 +55,6 @@ export interface Application {
   revisionHistoryRepository: IRevisionHistoryRepository;
   userRepository: IUserRepository;
   scrapeSessionRepository: IScrapeSessionRepository;
-  tokenRepository: ITokenRepository;
   shutdown: () => Promise<void>;
 }
 
@@ -78,8 +87,8 @@ export function buildApplication(): Application {
   const tokenRepository = new MongoTokenRepository(config.encryption.key);
 
   // ── Phase 3: OAuth ───────────────────────────────────────────────────────────
-  // const oauthService = new OAuthService(config, httpClient);
-  // const tokenProvider = new TokenProvider(oauthService, tokenRepository, log.child('token-provider'));
+  const oauthService = new OAuthService(config, httpClient);
+  const tokenProvider = new TokenProvider(oauthService, tokenRepository, log.child('token-provider'));
 
   // ── Phase 4: Airtable API ────────────────────────────────────────────────────
   // const apiService = new AirtableApiService(config, httpClient, tokenProvider, rateLimiter, log.child('airtable-api'));
@@ -96,12 +105,18 @@ export function buildApplication(): Application {
   // const revisionParser = new RevisionHistoryParser();
   // const revisionService = new RevisionHistoryService(sessionOrchestrator, revisionParser, revisionHistoryRepository, userRepository, rateLimiter, log.child('revision'));
 
-  // ── Phase 8: HTTP Server ─────────────────────────────────────────────────────
-  // const httpServer = new HttpServer(config, oauthService, tokenProvider, apiService, queueManager, sessionOrchestrator, log.child('http-server'));
+  // ── Phase 3+: HTTP Server (grows as routes are added in each phase) ──────────
+  const httpServer = new HttpServer({
+    config,
+    oauthService,
+    tokenProvider,
+    tokenRepository,
+    log: log.child('http-server'),
+  });
 
   const shutdown = async (): Promise<void> => {
     log.info('Shutting down gracefully');
-    // await httpServer.stop();
+    await httpServer.stop();
     // await cronScheduler.shutdown();
     await queueManager.closeAll();
     // await browserManager.close();
@@ -113,15 +128,18 @@ export function buildApplication(): Application {
     logger: log,
     mongo,
     queueManager,
+    httpServer,
     httpClient,
     rateLimiter,
+    oauthService,
+    tokenProvider,
+    tokenRepository,
     baseRepository,
     tableRepository,
     pageRepository,
     revisionHistoryRepository,
     userRepository,
     scrapeSessionRepository,
-    tokenRepository,
     shutdown,
   };
 }
